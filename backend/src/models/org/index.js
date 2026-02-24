@@ -9,6 +9,7 @@ const productStockSchema = require('./ProductStock');
 const stockMovementSchema = require('./StockMovement');
 const stockTransferSchema = require('./StockTransfer');
 const stockAdjustmentSchema = require('./StockAdjustment');
+const adjustmentBatchSchema = require('./AdjustmentBatch');
 const customerTierPriceSchema = require('./CustomerTierPrice');
 const customerSchema = require('./Customer');
 const customerLedgerSchema = require('./CustomerLedger');
@@ -54,6 +55,7 @@ const registerOrgModels = (connection) => {
   register('StockMovement', stockMovementSchema);
   register('StockTransfer', stockTransferSchema);
   register('StockAdjustment', stockAdjustmentSchema);
+  register('AdjustmentBatch', adjustmentBatchSchema);
   register('CustomerTierPrice', customerTierPriceSchema);
   register('Customer', customerSchema);
   register('CustomerLedger', customerLedgerSchema);
