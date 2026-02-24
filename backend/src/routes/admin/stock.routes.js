@@ -14,8 +14,6 @@ router.get('/movements/product/:productId', warehousePlus, ctrl.getProductMoveme
 // Opening stock
 router.post('/opening', managerPlus, ctrl.setOpeningStock);
 router.post('/opening/bulk-by-warehouse', managerPlus, ctrl.bulkOpeningByWarehouse);
-router.post('/opening/bulk-by-product', managerPlus, ctrl.bulkOpeningByProduct);
-
 // Adjustments (batch-based, pending→approved/cancelled)
 router.get('/adjustments', warehousePlus, ctrl.listAdjustmentBatches);
 router.post('/adjustments/bulk', warehousePlus, ctrl.bulkCreateAdjustment);

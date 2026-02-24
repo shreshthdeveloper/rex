@@ -7,7 +7,6 @@ import ProductSearch from '../../components/ProductSearch';
 
 const tabs = [
   { id: 'overview', label: 'Stock Overview' },
-  { id: 'low', label: 'Low Stock' },
   { id: 'opening', label: 'Opening Stock' },
   { id: 'adjustments', label: 'Adjustments' },
   { id: 'transfers', label: 'Transfers' },
@@ -22,7 +21,6 @@ const adjTypeOpts = [
 const transferStatusColor = { pending: 'yellow', completed: 'green', cancelled: 'red', in_transit: 'cyan' };
 const adjStatusColor = { pending: 'yellow', approved: 'green', cancelled: 'red' };
 
-const emptyOpening = { productId: '', warehouseId: '', quantity: '', costPrice: '' };
 const emptyAdjustment = {
   warehouseId: '',
   adjustmentType: 'increase',
@@ -51,14 +49,10 @@ export default function StockManagement() {
 
   // Tab data
   const [stockList, setStockList] = useState([]);
-  const [lowStockList, setLowStockList] = useState([]);
   const [adjustments, setAdjustments] = useState([]);
   const [transfers, setTransfers] = useState([]);
   const [movements, setMovements] = useState([]);
 
-  // Opening stock form
-  const [openingForm, setOpeningForm] = useState(emptyOpening);
-  const [savingOpening, setSavingOpening] = useState(false);
 
   // Adjustment modal (create)
   const [adjModalOpen, setAdjModalOpen] = useState(false);
@@ -92,6 +86,14 @@ export default function StockManagement() {
   const [editTxId, setEditTxId] = useState(null);
   const [savingEditTx, setSavingEditTx] = useState(false);
 
+  // Stock history modal (product movements)
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyProduct, setHistoryProduct] = useState(null); // { name, _id, warehouseId, warehouseName }
+  const [historyMovements, setHistoryMovements] = useState([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  const [historyPage, setHistoryPage] = useState(1);
+  const [historyTotalPages, setHistoryTotalPages] = useState(1);
+
   // Load dropdown options on mount
   useEffect(() => {
     const load = async () => {
@@ -117,35 +119,29 @@ export default function StockManagement() {
     finally { setLoading(false); }
   }, [page, search]);
 
-  const fetchLowStock = useCallback(async () => {
-    try {
-      setLoading(true);
-      const res = await stockAPI.lowStock({ page });
-      setLowStockList(res.data || []);
-      setTotalPages(1);
-    } catch (err) { toast.error(err.message || 'Failed to load low stock'); }
-    finally { setLoading(false); }
-  }, [page]);
-
   const fetchAdjustments = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await stockAPI.listAdjustments({ page });
+      const params = { page };
+      if (search) params.search = search;
+      const res = await stockAPI.listAdjustments(params);
       setAdjustments(res.data?.adjustments || []);
       setTotalPages(res.data?.pagination?.pages || 1);
     } catch (err) { toast.error(err.message || 'Failed to load adjustments'); }
     finally { setLoading(false); }
-  }, [page]);
+  }, [page, search]);
 
   const fetchTransfers = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await stockAPI.listTransfers({ page });
+      const params = { page };
+      if (search) params.search = search;
+      const res = await stockAPI.listTransfers(params);
       setTransfers(res.data?.transfers || []);
       setTotalPages(res.data?.pagination?.pages || 1);
     } catch (err) { toast.error(err.message || 'Failed to load transfers'); }
     finally { setLoading(false); }
-  }, [page]);
+  }, [page, search]);
 
   const fetchMovements = useCallback(async () => {
     try {
@@ -166,21 +162,9 @@ export default function StockManagement() {
   }, [activeTab]);
 
   useEffect(() => {
-    const fetchMap = { overview: fetchStock, low: fetchLowStock, adjustments: fetchAdjustments, transfers: fetchTransfers, movements: fetchMovements };
+    const fetchMap = { overview: fetchStock, adjustments: fetchAdjustments, transfers: fetchTransfers, movements: fetchMovements };
     fetchMap[activeTab]?.();
-  }, [activeTab, fetchStock, fetchLowStock, fetchAdjustments, fetchTransfers, fetchMovements]);
-
-  // ─── Opening Stock Submit ───
-  const handleOpeningSubmit = async (e) => {
-    e.preventDefault();
-    try {
-      setSavingOpening(true);
-      await stockAPI.setOpening({ ...openingForm, quantity: Number(openingForm.quantity), costPrice: Number(openingForm.costPrice) });
-      toast.success('Opening stock set successfully');
-      setOpeningForm(emptyOpening);
-    } catch (err) { toast.error(err.message || 'Failed to set opening stock'); }
-    finally { setSavingOpening(false); }
-  };
+  }, [activeTab, fetchStock, fetchAdjustments, fetchTransfers, fetchMovements]);
 
   // ─── Adjustment Submit ───
   const handleAdjSubmit = async (e) => {
@@ -561,10 +545,40 @@ export default function StockManagement() {
     finally { setSavingEditTx(false); }
   };
 
+  // ─── Stock history handler ───
+  const openStockHistory = async (row) => {
+    setHistoryProduct({ name: row.product?.name || '?', productId: row.product?._id || row.product, warehouseName: row.warehouse?.name });
+    setHistoryPage(1);
+    setHistoryOpen(true);
+    try {
+      setLoadingHistory(true);
+      const res = await stockAPI.productMovements(row.product?._id || row.product, { page: 1, limit: 20 });
+      setHistoryMovements(res.data?.movements || []);
+      setHistoryTotalPages(res.data?.pagination?.pages || 1);
+    } catch { toast.error('Failed to load history'); }
+    finally { setLoadingHistory(false); }
+  };
+
+  useEffect(() => {
+    if (!historyOpen || !historyProduct) return;
+    setLoadingHistory(true);
+    stockAPI.productMovements(historyProduct.productId, { page: historyPage, limit: 20 })
+      .then((res) => { setHistoryMovements(res.data?.movements || []); setHistoryTotalPages(res.data?.pagination?.pages || 1); })
+      .catch(() => toast.error('Failed to load history'))
+      .finally(() => setLoadingHistory(false));
+  }, [historyPage, historyOpen]);
+
   // (transfer item helpers moved to named handlers above)
 
   // ─── Column definitions ───
   const stockColumns = [
+    {
+      key: 'actions', label: '', render: (r) => (
+        <button onClick={(e) => { e.stopPropagation(); openStockHistory(r); }} className="p-1 text-slate-400 hover:text-violet-600 rounded transition-colors" title="View history">
+          <Eye size={16} />
+        </button>
+      ),
+    },
     { key: 'product', label: 'Product', render: (r) => r.product?.name || r.product || '—' },
     { key: 'warehouse', label: 'Warehouse', render: (r) => r.warehouse?.name || r.warehouse || '—' },
     { key: 'quantity', label: 'Quantity' },
@@ -636,14 +650,15 @@ export default function StockManagement() {
     { key: 'createdAt', label: 'Date', render: (r) => r.createdAt ? new Date(r.createdAt).toLocaleDateString() : '—' },
   ];
 
+  const mvTypeColor = { transfer_in: 'green', transfer_out: 'red', adjustment_in: 'blue', adjustment_out: 'orange', opening_stock: 'violet', sale: 'red', return: 'green' };
   const mvColumns = [
-    { key: 'type', label: 'Type', render: (r) => <Badge color="violet">{r.type}</Badge> },
+    { key: 'movementType', label: 'Type', render: (r) => <Badge color={mvTypeColor[r.movementType] || 'slate'}>{r.movementType?.replace(/_/g, ' ')}</Badge> },
     { key: 'product', label: 'Product', render: (r) => r.product?.name || '—' },
     { key: 'warehouse', label: 'Warehouse', render: (r) => r.warehouse?.name || '—' },
-    { key: 'quantity', label: 'Qty', render: (r) => r.quantity ?? '—' },
-    { key: 'from', label: 'From', render: (r) => r.fromWarehouse?.name || r.from || '—' },
-    { key: 'to', label: 'To', render: (r) => r.toWarehouse?.name || r.to || '—' },
-    { key: 'reference', label: 'Reference', render: (r) => r.reference || r.referenceId || '—' },
+    { key: 'quantityChange', label: 'Qty', render: (r) => { const q = r.quantityChange; return <span className={q > 0 ? 'text-emerald-600 font-semibold' : 'text-red-500 font-semibold'}>{q > 0 ? '+' : ''}{q ?? '—'}</span>; } },
+    { key: 'from', label: 'From', render: (r) => r.fromWarehouse?.name || '—' },
+    { key: 'to', label: 'To', render: (r) => r.toWarehouse?.name || '—' },
+    { key: 'referenceNumber', label: 'Reference', render: (r) => r.referenceNumber || '—' },
     { key: 'createdAt', label: 'Date', render: (r) => r.createdAt ? new Date(r.createdAt).toLocaleString() : '—' },
   ];
 
@@ -651,217 +666,187 @@ export default function StockManagement() {
   const renderOverview = () => (
     <>
       <div className="flex items-center gap-3 mb-4">
-        <SearchInput value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} placeholder="Search products..." />
+        <SearchInput value={search} onChange={(value) => { setSearch(value); setPage(1); }} placeholder="Search products..." />
       </div>
       <DataTable columns={stockColumns} data={stockList} loading={loading} emptyMessage="No stock records found" />
       <Pagination page={page} totalPages={totalPages} onPageChange={setPage} className="mt-4" />
-    </>
-  );
 
-  const renderLowStock = () => (
-    <>
-      <div className="flex items-center gap-2 mb-4 text-amber-600">
-        <AlertTriangle size={18} />
-        <span className="text-sm font-medium">Products below reorder level</span>
-      </div>
-      <DataTable columns={stockColumns} data={lowStockList} loading={loading} emptyMessage="No low stock alerts" />
-      <Pagination page={page} totalPages={totalPages} onPageChange={setPage} className="mt-4" />
+      {/* ── Product History Modal ── */}
+      <Modal open={historyOpen} onClose={() => setHistoryOpen(false)} title={`Movement History — ${historyProduct?.name || ''}`} size="xl">
+        {loadingHistory ? (
+          <div className="py-12 flex justify-center"><Loader /></div>
+        ) : historyMovements.length === 0 ? (
+          <p className="text-center text-slate-400 py-10 text-sm">No movements found for this product.</p>
+        ) : (
+          <>
+            <div className="overflow-x-auto rounded-lg border border-gray-200">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50">
+                  <tr className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    <th className="py-2.5 px-3 text-left">Type</th>
+                    <th className="py-2.5 px-3 text-left">Warehouse</th>
+                    <th className="py-2.5 px-3 text-center w-20">Before</th>
+                    <th className="py-2.5 px-3 text-center w-20">Change</th>
+                    <th className="py-2.5 px-3 text-center w-20">After</th>
+                    <th className="py-2.5 px-3 text-left">Reference</th>
+                    <th className="py-2.5 px-3 text-left">Date</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {historyMovements.map((m) => {
+                    const typeColor = { transfer_in: 'green', transfer_out: 'red', adjustment_in: 'blue', adjustment_out: 'orange', opening_stock: 'violet', sale: 'red', return: 'green' };
+                    return (
+                      <tr key={m._id} className="hover:bg-gray-50">
+                        <td className="py-2.5 px-3"><Badge color={typeColor[m.movementType] || 'slate'}>{m.movementType?.replace(/_/g, ' ')}</Badge></td>
+                        <td className="py-2.5 px-3 text-slate-700">{m.warehouse?.name || '—'}</td>
+                        <td className="py-2.5 px-3 text-center text-slate-500">{m.quantityBefore ?? '—'}</td>
+                        <td className="py-2.5 px-3 text-center font-semibold">
+                          <span className={m.quantityChange > 0 ? 'text-emerald-600' : 'text-red-500'}>
+                            {m.quantityChange > 0 ? '+' : ''}{m.quantityChange}
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-3 text-center font-semibold text-slate-800">{m.quantityAfter ?? '—'}</td>
+                        <td className="py-2.5 px-3 text-slate-500 text-xs">{m.referenceNumber || '—'}</td>
+                        <td className="py-2.5 px-3 text-slate-400 text-xs whitespace-nowrap">{m.createdAt ? new Date(m.createdAt).toLocaleString() : '—'}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <Pagination page={historyPage} totalPages={historyTotalPages} onPageChange={setHistoryPage} className="mt-3" />
+          </>
+        )}
+      </Modal>
     </>
   );
 
   // ─── Bulk opening stock states ───
-  const [openingMode, setOpeningMode] = useState('single'); // 'single' | 'byWarehouse' | 'byProduct'
   const [bulkWhId, setBulkWhId] = useState('');
-  const [bulkWhItems, setBulkWhItems] = useState([{ productId: '', quantity: '', warehousePrice: '' }]);
-  const [bulkProdId, setBulkProdId] = useState('');
-  const [bulkProdWarehouses, setBulkProdWarehouses] = useState([{ warehouseId: '', quantity: '', warehousePrice: '' }]);
+  // Items use product object from ProductSearch: { product: {_id, name, sku, ...}, quantity: '', warehousePrice: '' }
+  const [bulkWhItems, setBulkWhItems] = useState([]);
   const [savingBulk, setSavingBulk] = useState(false);
 
-  // Bulk by warehouse helpers
-  const addBulkWhItem = () => setBulkWhItems(p => [...p, { productId: '', quantity: '', warehousePrice: '' }]);
+  // Bulk by warehouse — ProductSearch handler
+  const handleOpeningProductSelect = (selectedItems) => {
+    setBulkWhItems(prev => {
+      const incoming = selectedItems.filter(
+        s => !prev.find(existing => existing.product._id === s.product._id)
+      );
+      if (incoming.length === 0) {
+        toast.warning('Product(s) already added to the list');
+        return prev;
+      }
+      return [
+        ...prev,
+        ...incoming.map(s => ({ product: s.product, quantity: '', warehousePrice: '' })),
+      ];
+    });
+  };
+
   const updateBulkWhItem = (idx, key, val) => setBulkWhItems(p => { const items = [...p]; items[idx] = { ...items[idx], [key]: val }; return items; });
   const removeBulkWhItem = (idx) => setBulkWhItems(p => p.filter((_, i) => i !== idx));
-
-  // Bulk by product helpers
-  const addBulkProdWh = () => setBulkProdWarehouses(p => [...p, { warehouseId: '', quantity: '', warehousePrice: '' }]);
-  const updateBulkProdWh = (idx, key, val) => setBulkProdWarehouses(p => { const items = [...p]; items[idx] = { ...items[idx], [key]: val }; return items; });
-  const removeBulkProdWh = (idx) => setBulkProdWarehouses(p => p.filter((_, i) => i !== idx));
 
   const handleBulkByWarehouse = async (e) => {
     e.preventDefault();
     if (!bulkWhId) return toast.error('Warehouse is required');
-    const validItems = bulkWhItems.filter(i => i.productId && i.quantity);
-    if (!validItems.length) return toast.error('At least one product with quantity is required');
+    const validItems = bulkWhItems.filter(i => i.product?._id && i.quantity);
+    if (!validItems.length) return toast.error('Add at least one product with a quantity');
     try {
       setSavingBulk(true);
       const res = await stockAPI.bulkOpeningByWarehouse({
         warehouseId: bulkWhId,
-        items: validItems.map(i => ({ productId: i.productId, quantity: Number(i.quantity), warehousePrice: i.warehousePrice ? Number(i.warehousePrice) : undefined })),
+        items: validItems.map(i => ({ productId: i.product._id, quantity: Number(i.quantity), warehousePrice: i.warehousePrice ? Number(i.warehousePrice) : undefined })),
       });
       const data = res.data;
       toast.success(`${data?.success?.length || 0} set, ${data?.skipped?.length || 0} skipped`);
       if (data?.skipped?.length) data.skipped.forEach(s => toast.error(`Skipped ${s.productId?.slice(-6) || 'item'}: ${s.reason}`));
-      setBulkWhItems([{ productId: '', quantity: '', warehousePrice: '' }]);
-    } catch (err) { toast.error(err.message || 'Bulk opening stock failed'); }
-    finally { setSavingBulk(false); }
-  };
-
-  const handleBulkByProduct = async (e) => {
-    e.preventDefault();
-    if (!bulkProdId) return toast.error('Product is required');
-    const validWhs = bulkProdWarehouses.filter(w => w.warehouseId && w.quantity);
-    if (!validWhs.length) return toast.error('At least one warehouse with quantity is required');
-    try {
-      setSavingBulk(true);
-      const res = await stockAPI.bulkOpeningByProduct({
-        productId: bulkProdId,
-        warehouses: validWhs.map(w => ({ warehouseId: w.warehouseId, quantity: Number(w.quantity), warehousePrice: w.warehousePrice ? Number(w.warehousePrice) : undefined })),
-      });
-      const data = res.data;
-      toast.success(`${data?.success?.length || 0} set, ${data?.skipped?.length || 0} skipped`);
-      if (data?.skipped?.length) data.skipped.forEach(s => toast.error(`Skipped: ${s.reason}`));
-      setBulkProdWarehouses([{ warehouseId: '', quantity: '', warehousePrice: '' }]);
+      setBulkWhItems([]);
     } catch (err) { toast.error(err.message || 'Bulk opening stock failed'); }
     finally { setSavingBulk(false); }
   };
 
   const renderOpening = () => (
-    <div className="space-y-4">
-      <div className="flex gap-2 mb-4">
-        {[{ id: 'single', label: 'Single SKU' }, { id: 'byWarehouse', label: 'Bulk by Warehouse' }, { id: 'byProduct', label: 'Bulk by Product' }].map(m => (
-          <button
-            key={m.id}
-            onClick={() => setOpeningMode(m.id)}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${openingMode === m.id ? 'bg-violet-600 text-white' : 'bg-white text-slate-600 border border-gray-200 hover:bg-violet-50'}`}
-          >
-            {m.label}
-          </button>
-        ))}
-      </div>
-
-      {openingMode === 'single' && (
-        <GlassCard className="max-w-lg">
-          <h3 className="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2">
-            <Package size={20} className="text-violet-600" /> Set Opening Stock
-          </h3>
-          <p className="text-xs text-amber-600 mb-3">Note: Opening stock can only be set once per SKU per warehouse.</p>
-          <form onSubmit={handleOpeningSubmit} className="space-y-4">
-            <Select label="Product" options={productOpts} placeholder="Select product" value={openingForm.productId}
-              onChange={(e) => setOpeningForm((p) => ({ ...p, productId: e.target.value }))} />
-            <Select label="Warehouse" options={warehouseOpts} placeholder="Select warehouse" value={openingForm.warehouseId}
-              onChange={(e) => setOpeningForm((p) => ({ ...p, warehouseId: e.target.value }))} />
-            <Input label="Quantity" type="number" min="0" value={openingForm.quantity}
-              onChange={(e) => setOpeningForm((p) => ({ ...p, quantity: e.target.value }))} />
-            <Input label="Cost Price" type="number" min="0" step="0.01" value={openingForm.costPrice}
-              onChange={(e) => setOpeningForm((p) => ({ ...p, costPrice: e.target.value }))} />
-            <Button type="submit" loading={savingOpening}>Set Opening Stock</Button>
-          </form>
-        </GlassCard>
-      )}
-
-      {openingMode === 'byWarehouse' && (
-        <GlassCard>
-          <h3 className="text-lg font-semibold text-slate-800 mb-2 flex items-center gap-2">
-            <Layers size={20} className="text-violet-600" /> Bulk Opening Stock by Warehouse
-          </h3>
-          <p className="text-xs text-slate-500 mb-4">Select a warehouse and add opening inventory for multiple SKUs at once.</p>
-          <form onSubmit={handleBulkByWarehouse} className="space-y-4">
-            <div className="max-w-xs">
-              <Select label="Warehouse *" options={warehouseOpts} placeholder="Select warehouse" value={bulkWhId}
-                onChange={(e) => setBulkWhId(e.target.value)} />
-            </div>
-            <div className="overflow-x-auto">
+    <div className="space-y-6">
+      {/* ── Bulk by Warehouse (primary) ── */}
+      <GlassCard>
+        <h3 className="text-lg font-semibold text-slate-800 mb-1 flex items-center gap-2">
+          <Layers size={20} className="text-violet-600" /> Set Opening Stock
+        </h3>
+        <p className="text-xs text-slate-500 mb-4">Select a warehouse, search for products, then fill in quantity and cost price before saving.</p>
+        <p className="text-xs text-amber-600 mb-4">Note: Opening stock can only be set once per SKU per warehouse. Duplicate entries will be skipped.</p>
+        <form onSubmit={handleBulkByWarehouse} className="space-y-4">
+          <div className="max-w-xs">
+            <Select label="Warehouse *" options={warehouseOpts} placeholder="Select warehouse" value={bulkWhId}
+              onChange={(e) => setBulkWhId(e.target.value)} />
+          </div>
+          <ProductSearch
+            label="Search & Add Products"
+            onSelect={handleOpeningProductSelect}
+            placeholder="Search by name or SKU…"
+          />
+            <div className="overflow-x-auto rounded-lg border border-gray-200">
               <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-slate-500 border-b text-xs uppercase">
-                    <th className="py-2 text-left">Product</th>
-                    <th className="py-2 text-center w-28">Quantity</th>
-                    <th className="py-2 text-center w-32">Cost Price</th>
-                    <th className="py-2 w-10"></th>
+                <thead className="bg-gray-50">
+                  <tr className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    <th className="py-2.5 px-3 text-left">Product</th>
+                    <th className="py-2.5 px-3 text-center w-32">Quantity *</th>
+                    <th className="py-2.5 px-3 text-center w-36">Cost Price</th>
+                    <th className="py-2.5 px-3 w-10"></th>
                   </tr>
                 </thead>
-                <tbody>
-                  {bulkWhItems.map((item, idx) => (
-                    <tr key={idx} className="border-b border-gray-100">
-                      <td className="py-2 pr-2">
-                        <Select options={productOpts} value={item.productId} onChange={(e) => updateBulkWhItem(idx, 'productId', e.target.value)} />
+                <tbody className="divide-y divide-gray-100">
+                  {bulkWhItems.length === 0 ? (
+                    <tr><td colSpan={4} className="py-6 text-center text-slate-400 text-xs">Search and add products above</td></tr>
+                  ) : bulkWhItems.map((item, idx) => (
+                    <tr key={item.product._id} className="hover:bg-gray-50 transition-colors">
+                      <td className="py-2.5 px-3">
+                        <div className="font-medium text-slate-800">{item.product.name}</div>
+                        <div className="text-xs text-slate-400 mt-0.5">{item.product.sku}
+                          {item.product.variantValue && <span className="ml-1 text-amber-500">· {item.product.variantValue}</span>}
+                        </div>
                       </td>
-                      <td className="py-2 px-2">
-                        <input type="number" min="0" className="w-full text-center border border-gray-200 rounded px-2 py-1.5 text-sm" value={item.quantity} onChange={(e) => updateBulkWhItem(idx, 'quantity', e.target.value)} />
+                      <td className="py-2.5 px-3">
+                        <input
+                          type="number" min="0"
+                          className="w-full text-center border border-gray-200 rounded px-2 py-1.5 text-sm text-slate-900 focus:outline-none focus:ring-1 focus:ring-violet-400"
+                          value={item.quantity}
+                          onChange={(e) => updateBulkWhItem(idx, 'quantity', e.target.value)}
+                          placeholder="0"
+                        />
                       </td>
-                      <td className="py-2 px-2">
-                        <input type="number" min="0" step="0.01" className="w-full text-center border border-gray-200 rounded px-2 py-1.5 text-sm" value={item.warehousePrice} onChange={(e) => updateBulkWhItem(idx, 'warehousePrice', e.target.value)} placeholder="Optional" />
+                      <td className="py-2.5 px-3">
+                        <input
+                          type="number" min="0" step="0.01"
+                          className="w-full text-center border border-gray-200 rounded px-2 py-1.5 text-sm text-slate-900 focus:outline-none focus:ring-1 focus:ring-violet-400"
+                          value={item.warehousePrice}
+                          onChange={(e) => updateBulkWhItem(idx, 'warehousePrice', e.target.value)}
+                          placeholder="Optional"
+                        />
                       </td>
-                      <td className="py-2 text-center">
-                        {bulkWhItems.length > 1 && <button type="button" onClick={() => removeBulkWhItem(idx)} className="text-red-400 hover:text-red-600"><XCircle size={16} /></button>}
+                      <td className="py-2.5 px-3 text-center">
+                        <button type="button" onClick={() => removeBulkWhItem(idx)} className="text-red-400 hover:text-red-600">
+                          <XCircle size={16} />
+                        </button>
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
-            <div className="flex gap-2">
-              <Button type="button" size="sm" variant="outline" onClick={addBulkWhItem}><Plus size={14} className="mr-1" /> Add Row</Button>
-              <Button type="submit" loading={savingBulk}>Save All</Button>
-            </div>
-          </form>
-        </GlassCard>
-      )}
+          <div className="flex gap-2 pt-1">
+            <Button type="submit" loading={savingBulk} disabled={!bulkWhItems.length}>Save Opening Stock</Button>
+          </div>
+        </form>
+      </GlassCard>
 
-      {openingMode === 'byProduct' && (
-        <GlassCard>
-          <h3 className="text-lg font-semibold text-slate-800 mb-2 flex items-center gap-2">
-            <Package size={20} className="text-violet-600" /> Bulk Opening Stock by Product
-          </h3>
-          <p className="text-xs text-slate-500 mb-4">Select a product and set opening stock across multiple warehouses at once.</p>
-          <form onSubmit={handleBulkByProduct} className="space-y-4">
-            <div className="max-w-xs">
-              <Select label="Product *" options={productOpts} placeholder="Select product" value={bulkProdId}
-                onChange={(e) => setBulkProdId(e.target.value)} />
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-slate-500 border-b text-xs uppercase">
-                    <th className="py-2 text-left">Warehouse</th>
-                    <th className="py-2 text-center w-28">Quantity</th>
-                    <th className="py-2 text-center w-32">Cost Price</th>
-                    <th className="py-2 w-10"></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {bulkProdWarehouses.map((wh, idx) => (
-                    <tr key={idx} className="border-b border-gray-100">
-                      <td className="py-2 pr-2">
-                        <Select options={warehouseOpts} value={wh.warehouseId} onChange={(e) => updateBulkProdWh(idx, 'warehouseId', e.target.value)} />
-                      </td>
-                      <td className="py-2 px-2">
-                        <input type="number" min="0" className="w-full text-center border border-gray-200 rounded px-2 py-1.5 text-sm" value={wh.quantity} onChange={(e) => updateBulkProdWh(idx, 'quantity', e.target.value)} />
-                      </td>
-                      <td className="py-2 px-2">
-                        <input type="number" min="0" step="0.01" className="w-full text-center border border-gray-200 rounded px-2 py-1.5 text-sm" value={wh.warehousePrice} onChange={(e) => updateBulkProdWh(idx, 'warehousePrice', e.target.value)} placeholder="Optional" />
-                      </td>
-                      <td className="py-2 text-center">
-                        {bulkProdWarehouses.length > 1 && <button type="button" onClick={() => removeBulkProdWh(idx)} className="text-red-400 hover:text-red-600"><XCircle size={16} /></button>}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <div className="flex gap-2">
-              <Button type="button" size="sm" variant="outline" onClick={addBulkProdWh}><Plus size={14} className="mr-1" /> Add Row</Button>
-              <Button type="submit" loading={savingBulk}>Save All</Button>
-            </div>
-          </form>
-        </GlassCard>
-      )}
     </div>
   );
 
   const renderAdjustments = () => (
     <>
-      <div className="flex justify-end mb-4">
+      <div className="flex items-center justify-between mb-4 gap-3">
+        <SearchInput value={search} onChange={(value) => { setSearch(value); setPage(1); }} placeholder="Search by ref# (ADJ-...)" className="max-w-xs" />
         <Button onClick={() => { setAdjForm(emptyAdjustment); setAdjModalOpen(true); }}>
           <Plus size={16} className="mr-1" /> New Adjustment
         </Button>
@@ -1117,7 +1102,8 @@ export default function StockManagement() {
 
   const renderTransfers = () => (
     <>
-      <div className="flex justify-end mb-4">
+      <div className="flex items-center justify-between mb-4 gap-3">
+        <SearchInput value={search} onChange={(value) => { setSearch(value); setPage(1); }} placeholder="Search by ref# (TRF-...)" className="max-w-xs" />
         <Button onClick={() => { setTxForm(emptyTransfer); setTxModalOpen(true); }}>
           <ArrowLeftRight size={16} className="mr-1" /> New Transfer
         </Button>
@@ -1469,7 +1455,7 @@ export default function StockManagement() {
   const renderMovements = () => (
     <>
       <div className="flex items-center gap-3 mb-4">
-        <SearchInput value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} placeholder="Search movements..." />
+        <SearchInput value={search} onChange={(value) => { setSearch(value); setPage(1); }} placeholder="Search by product name..." />
       </div>
       <DataTable columns={mvColumns} data={movements} loading={loading} emptyMessage="No movements found" />
       <Pagination page={page} totalPages={totalPages} onPageChange={setPage} className="mt-4" />
@@ -1478,7 +1464,6 @@ export default function StockManagement() {
 
   const viewMap = {
     overview: renderOverview,
-    low: renderLowStock,
     opening: renderOpening,
     adjustments: renderAdjustments,
     transfers: renderTransfers,

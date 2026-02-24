@@ -110,7 +110,6 @@ export const stockAPI = {
   productMovements: (productId, params) => api.get(`/admin/stock/movements/product/${productId}`, { ...withToken('adminToken'), params }),
   setOpening: (data) => api.post('/admin/stock/opening', data, withToken('adminToken')),
   bulkOpeningByWarehouse: (data) => api.post('/admin/stock/opening/bulk-by-warehouse', data, withToken('adminToken')),
-  bulkOpeningByProduct: (data) => api.post('/admin/stock/opening/bulk-by-product', data, withToken('adminToken')),
   bulkCreateAdjustment: (data) => api.post('/admin/stock/adjustments/bulk', data, withToken('adminToken')),
   listAdjustments: (params) => api.get('/admin/stock/adjustments', { ...withToken('adminToken'), params }),
   getAdjustment: (id) => api.get(`/admin/stock/adjustments/${id}`, withToken('adminToken')),

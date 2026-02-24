@@ -7,11 +7,20 @@ const { updateStock } = require('../../services/stockService');
 const { withTransaction } = require('../../utils/transaction');
 
 const listAllStock = asyncHandler(async (req, res) => {
-  const { page, limit, warehouse, product } = req.query;
+  const { page, limit, warehouse, product, search } = req.query;
   const { skip, limit: lim, page: pg } = paginate(page, limit);
   const filter = {};
   if (warehouse) filter.warehouse = warehouse;
   if (product) filter.product = product;
+  if (search) {
+    const matchingProducts = await req.models.Product.find({
+      $or: [
+        { name: { $regex: search, $options: 'i' } },
+        { sku:  { $regex: search, $options: 'i' } },
+      ],
+    }).select('_id');
+    filter.product = { $in: matchingProducts.map((p) => p._id) };
+  }
   const [stocks, total] = await Promise.all([
     req.models.ProductStock.find(filter)
       .populate('product', 'name sku type')
@@ -79,14 +88,25 @@ const bulkCreateAdjustment = asyncHandler(async (req, res) => {
     createdBy: req.user._id,
   });
 
+  // Reserve stock immediately for decrease adjustments (released on approve or cancel)
+  if (adjustmentType === 'decrease') {
+    for (const item of batch.items) {
+      await req.models.ProductStock.updateOne(
+        { product: item.product, warehouse: warehouseId },
+        { $inc: { reservedQuantity: Number(item.requestedQty) } }
+      );
+    }
+  }
+
   res.status(201).json(new ApiResponse(201, batch, 'Adjustment batch created (pending approval)'));
 });
 
 const listAdjustmentBatches = asyncHandler(async (req, res) => {
-  const { page, limit, status } = req.query;
+  const { page, limit, status, search } = req.query;
   const { skip, limit: lim, page: pg } = paginate(page, limit);
   const filter = {};
   if (status) filter.status = status;
+  if (search) filter.batchNumber = { $regex: search, $options: 'i' };
   const [batches, total] = await Promise.all([
     req.models.AdjustmentBatch.find(filter)
       .populate('warehouse', 'name code')
@@ -152,6 +172,10 @@ const approveAdjustmentBatch = asyncHandler(async (req, res) => {
         : -Math.abs(item.requestedQty);
       stock.quantity += change;
       if (stock.quantity < 0) throw new ApiError(400, `Stock cannot go below 0 (product: ${item.product})`);
+      // Release reservation for decrease adjustments
+      if (batch.adjustmentType === 'decrease') {
+        stock.reservedQuantity = Math.max(0, (stock.reservedQuantity || 0) - Math.abs(item.requestedQty));
+      }
       await stock.save({ session });
 
       const adj = new req.models.StockAdjustment({
@@ -196,6 +220,15 @@ const cancelAdjustmentBatch = asyncHandler(async (req, res) => {
   if (!batch) throw new ApiError(404, 'Adjustment batch not found');
   if (batch.status === 'approved') throw new ApiError(400, 'Cannot cancel an approved adjustment');
   if (batch.status === 'cancelled') throw new ApiError(400, 'Already cancelled');
+  // Release any reservations held for pending decrease adjustments
+  if (batch.adjustmentType === 'decrease') {
+    for (const item of batch.items) {
+      await req.models.ProductStock.updateOne(
+        { product: item.product, warehouse: batch.warehouse },
+        { $inc: { reservedQuantity: -Number(item.requestedQty) } }
+      );
+    }
+  }
   batch.status = 'cancelled';
   await batch.save();
   res.json(new ApiResponse(200, null, 'Adjustment cancelled'));
@@ -210,14 +243,22 @@ const createTransfer = asyncHandler(async (req, res) => {
     items: items.map((i) => ({ product: i.productId || i.product, requestedQty: i.requestedQty || i.quantity, notes: i.notes || '' })),
     notes: notes || '', createdBy: req.user._id, status: 'in_transit',
   });
+  // Reserve stock at source warehouse for each item
+  for (const item of transfer.items) {
+    await req.models.ProductStock.updateOne(
+      { product: item.product, warehouse: fromWarehouse },
+      { $inc: { reservedQuantity: Number(item.requestedQty) } }
+    );
+  }
   res.status(201).json(new ApiResponse(201, transfer, 'Stock transfer created'));
 });
 
 const listTransfers = asyncHandler(async (req, res) => {
-  const { page, limit, status } = req.query;
+  const { page, limit, status, search } = req.query;
   const { skip, limit: lim, page: pg } = paginate(page, limit);
   const filter = {};
   if (status) filter.status = status;
+  if (search) filter.transferNumber = { $regex: search, $options: 'i' };
   const [transfers, total] = await Promise.all([
     req.models.StockTransfer.find(filter)
       .populate('fromWarehouse', 'name code')
@@ -254,6 +295,12 @@ const completeTransfer = asyncHandler(async (req, res) => {
         fromWarehouse: transfer.fromWarehouse, toWarehouse: transfer.toWarehouse,
         notes: `Transfer to ${transfer.toWarehouse}`, userId: req.user._id,
       }, session);
+      // Release reservation at source warehouse
+      await req.models.ProductStock.findOneAndUpdate(
+        { product: item.product, warehouse: transfer.fromWarehouse },
+        { $inc: { reservedQuantity: -qty } },
+        { session }
+      );
       await updateStock(req.models, req.orgConn, {
         productId: item.product, warehouseId: transfer.toWarehouse,
         quantityChange: qty, movementType: 'transfer_in',
@@ -304,18 +351,34 @@ const cancelTransfer = asyncHandler(async (req, res) => {
   const transfer = await req.models.StockTransfer.findById(req.params.id);
   if (!transfer) throw new ApiError(404, 'Transfer not found');
   if (transfer.status === 'completed') throw new ApiError(400, 'Cannot cancel completed transfer');
+  // Release reservations at source warehouse
+  for (const item of transfer.items) {
+    await req.models.ProductStock.updateOne(
+      { product: item.product, warehouse: transfer.fromWarehouse },
+      { $inc: { reservedQuantity: -Number(item.requestedQty) } }
+    );
+  }
   transfer.status = 'cancelled';
   await transfer.save();
   res.json(new ApiResponse(200, null, 'Transfer cancelled'));
 });
 
 const listMovements = asyncHandler(async (req, res) => {
-  const { page, limit, product, warehouse, movementType, startDate, endDate } = req.query;
+  const { page, limit, product, warehouse, movementType, startDate, endDate, search } = req.query;
   const { skip, limit: lim, page: pg } = paginate(page, limit);
   const filter = {};
   if (product) filter.product = product;
   if (warehouse) filter.warehouse = warehouse;
   if (movementType) filter.movementType = movementType;
+  if (search) {
+    const matchingProducts = await req.models.Product.find({
+      $or: [
+        { name: { $regex: search, $options: 'i' } },
+        { sku:  { $regex: search, $options: 'i' } },
+      ],
+    }).select('_id');
+    filter.product = { $in: matchingProducts.map((p) => p._id) };
+  }
   if (startDate || endDate) {
     filter.createdAt = {};
     if (startDate) filter.createdAt.$gte = new Date(startDate);
@@ -325,6 +388,8 @@ const listMovements = asyncHandler(async (req, res) => {
     req.models.StockMovement.find(filter)
       .populate('product', 'name sku')
       .populate('warehouse', 'name code')
+      .populate('fromWarehouse', 'name code')
+      .populate('toWarehouse', 'name code')
       .sort({ createdAt: -1 }).skip(skip).limit(lim),
     req.models.StockMovement.countDocuments(filter),
   ]);
@@ -332,12 +397,15 @@ const listMovements = asyncHandler(async (req, res) => {
 });
 
 const getProductMovements = asyncHandler(async (req, res) => {
-  const { page, limit } = req.query;
+  const { page, limit, warehouse } = req.query;
   const { skip, limit: lim, page: pg } = paginate(page, limit);
   const filter = { product: req.params.productId };
+  if (warehouse) filter.warehouse = warehouse;
   const [movements, total] = await Promise.all([
     req.models.StockMovement.find(filter)
       .populate('warehouse', 'name code')
+      .populate('fromWarehouse', 'name code')
+      .populate('toWarehouse', 'name code')
       .sort({ createdAt: -1 }).skip(skip).limit(lim),
     req.models.StockMovement.countDocuments(filter),
   ]);
@@ -399,58 +467,11 @@ const bulkOpeningByWarehouse = asyncHandler(async (req, res) => {
   res.json(new ApiResponse(200, results, `Set opening stock for ${results.success.length} SKU(s), ${results.skipped.length} skipped`));
 });
 
-/**
- * Bulk opening stock by product — select a product and set opening stock across multiple warehouses
- * POST /admin/stock/opening/bulk-by-product
- * Body: { productId, warehouses: [{ warehouseId, quantity, warehousePrice? }] }
- */
-const bulkOpeningByProduct = asyncHandler(async (req, res) => {
-  const { productId, warehouses } = req.body;
-  if (!productId) throw new ApiError(400, 'Product is required');
-  if (!Array.isArray(warehouses) || !warehouses.length) throw new ApiError(400, 'At least one warehouse is required');
-
-  const results = { success: [], skipped: [] };
-
-  for (const wh of warehouses) {
-    const { warehouseId, quantity, warehousePrice } = wh;
-    if (!warehouseId || quantity === undefined) { results.skipped.push({ warehouseId, reason: 'Missing warehouseId or quantity' }); continue; }
-
-    const existing = await req.models.StockMovement.findOne({ product: productId, warehouse: warehouseId });
-    if (existing) {
-      results.skipped.push({ warehouseId, reason: 'Already has stock history in this warehouse' });
-      continue;
-    }
-
-    await withTransaction(req.orgConn, async (session) => {
-      let stock = await req.models.ProductStock.findOne({ product: productId, warehouse: warehouseId }).session(session);
-      if (!stock) {
-        stock = new req.models.ProductStock({ product: productId, warehouse: warehouseId, quantity: 0, reservedQuantity: 0 });
-      }
-      const qtyBefore = stock.quantity;
-      stock.quantity = quantity;
-      if (warehousePrice !== undefined) stock.warehousePrice = warehousePrice;
-      await stock.save({ session });
-
-      const movement = new req.models.StockMovement({
-        product: productId, warehouse: warehouseId,
-        movementType: 'opening_stock', quantityBefore: qtyBefore,
-        quantityChange: quantity - qtyBefore, quantityAfter: quantity,
-        referenceType: 'manual', referenceNumber: 'OPENING',
-        notes: 'Bulk opening stock set', createdBy: req.user._id,
-      });
-      await movement.save({ session });
-    });
-    results.success.push({ warehouseId, quantity });
-  }
-
-  res.json(new ApiResponse(200, results, `Set opening stock for ${results.success.length} warehouse(s), ${results.skipped.length} skipped`));
-});
-
 module.exports = {
   listAllStock, setOpeningStock,
   bulkCreateAdjustment, listAdjustmentBatches, getAdjustmentBatch,
   updateAdjustmentBatch, approveAdjustmentBatch, cancelAdjustmentBatch,
   createTransfer, updateTransfer, listTransfers, getTransfer, completeTransfer, cancelTransfer,
   listMovements, getProductMovements, lowStock,
-  bulkOpeningByWarehouse, bulkOpeningByProduct,
+  bulkOpeningByWarehouse,
 };
