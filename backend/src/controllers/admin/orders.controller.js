@@ -7,6 +7,52 @@ const { resolvePrice } = require('../../services/priceResolver');
 const { reserveStock, releaseReserved, deductOnShipment, receiveReturnStock, releaseReturnStock } = require('../../services/stockService');
 const { createCustomerLedgerEntry } = require('../../services/ledgerService');
 const { withTransaction } = require('../../utils/transaction');
+const axios = require('axios');
+
+/**
+ * Fire-and-forget: send order to Dispatch integration if active
+ */
+async function fireDispatch(models, order) {
+  try {
+    const dispatch = await models.Integration.findOne({ slug: 'dispatch', isActive: true });
+    if (!dispatch || !dispatch.apiKey) return;
+
+    const populated = await models.Order.findById(order._id)
+      .populate('customer', 'name phone email')
+      .populate('warehouse', 'name location address');
+    if (!populated) return;
+
+    const customer = populated.customer;
+    const warehouse = populated.warehouse;
+    const addr = (a) => a ? [a.line1, a.line2, a.city, a.state, a.zip, a.country].filter(Boolean).join(', ') : '';
+
+    const payload = {
+      customerName: customer?.name || '',
+      customerPhone: customer?.phone || customer?.email || '',
+      pickupAddress: warehouse?.location || warehouse?.name || '',
+      deliveryAddress: addr(populated.shippingAddress),
+      priority: 'high',
+      notes: populated.notes || `Order #${populated.orderNumber}`,
+    };
+
+    const webhookUrl = dispatch.webhookUrl || 'https://dispatch.distrx.io/api/zapier/webhook';
+    await axios.post(webhookUrl, payload, {
+      headers: { 'Content-Type': 'application/json', 'x-api-key': dispatch.apiKey },
+      timeout: 8000,
+    });
+  } catch (err) {
+    // Dispatch failure must never break the order — but log full details for debugging
+    const status = err.response?.status;
+    const responseData = err.response?.data;
+    console.error('[Dispatch] Failed to send order', order._id);
+    console.error('[Dispatch] Status:', status || 'no response');
+    console.error('[Dispatch] Response body:', responseData ? JSON.stringify(responseData) : err.message);
+    if (err.response?.config) {
+      console.error('[Dispatch] Request URL:', err.response.config.url);
+      console.error('[Dispatch] Request headers:', JSON.stringify(err.response.config.headers));
+    }
+  }
+}
 
 /**
  * Calculate line item totals
@@ -449,6 +495,10 @@ const updateStatus = asyncHandler(async (req, res) => {
     savedOrder = order;
   });
   res.json(new ApiResponse(200, savedOrder, `Status updated to ${status}`));
+  // Fire Dispatch webhook when order moves to processing (non-blocking)
+  if (status === 'processing') {
+    fireDispatch(req.models, savedOrder).catch(() => {});
+  }
 });
 
 const recordPayment = asyncHandler(async (req, res) => {

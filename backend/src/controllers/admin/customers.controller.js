@@ -76,6 +76,9 @@ const update = asyncHandler(async (req, res) => {
     if (dup) throw new ApiError(400, 'Email already in use');
     customer.email = req.body.email;
   }
+  if (req.body.password) {
+    customer.password = await bcrypt.hash(req.body.password, 12);
+  }
   await customer.save();
   const obj = customer.toObject();
   delete obj.password;

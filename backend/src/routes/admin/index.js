@@ -22,5 +22,6 @@ router.use('/notifications', require('./notifications.routes'));
 router.use('/ecom-settings', require('./ecomSettings.routes'));
 router.use('/upload', require('./upload.routes'));
 router.use('/transaction-log', require('./transactionLog.routes'));
+router.use('/integrations', require('./integrations.routes'));
 
 module.exports = router;
