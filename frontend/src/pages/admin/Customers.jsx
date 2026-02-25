@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useToast } from '../../context/ToastContext';
 import { PageHeader, Button, Modal, Input, Select, DataTable, Badge, ConfirmDialog, GlassCard, SearchInput, Loader, TabList, Textarea, CsvImport } from '../../components/ui';
+import AddressAutocomplete from '../../components/AddressAutocomplete';
 import { customersAPI } from '../../api';
 import { Plus, Edit, Trash2, Eye, UserCircle, Wallet, ArrowUpCircle, ArrowDownCircle, FileText, ShoppingCart, CreditCard, Receipt, RefreshCw } from 'lucide-react';
 
@@ -563,7 +564,22 @@ export default function Customers() {
           <div>
             <h4 className="text-sm font-medium text-slate-500 uppercase tracking-wide mb-3">Address</h4>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <Input label="Address Line" value={form.line1} onChange={set('line1')} placeholder="Street address" className="sm:col-span-2" />
+              <AddressAutocomplete
+                value={form.line1}
+                onChange={(val) => setForm((f) => ({ ...f, line1: val }))}
+                onAddressSelect={({ line1, city, state, zip, country }) =>
+                  setForm((f) => ({
+                    ...f,
+                    line1: line1 || f.line1,
+                    city: city || f.city,
+                    state: state || f.state,
+                    zip: zip || f.zip,
+                    country: country || f.country,
+                  }))
+                }
+                placeholder="Search or type address..."
+                className="sm:col-span-2"
+              />
               <Input label="City" value={form.city} onChange={set('city')} placeholder="City" />
               <Input label="State" value={form.state} onChange={set('state')} placeholder="State" />
               <Input label="Zip Code" value={form.zip} onChange={set('zip')} placeholder="Zip" />

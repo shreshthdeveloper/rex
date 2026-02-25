@@ -343,3 +343,112 @@ Full implementation of the 6-phase production-grade ledger system. All backend p
 - `backend/src/controllers/admin/customers.controller.js` � added `.populate('order', 'orderNumber')` to `getPayments`
 - `frontend/src/pages/admin/Customers.jsx` � fmtDateTime helper; Ref # column in Ledger & Statement; Order # + datetime in Payments; topupNumber + type badge + datetime in Topups
 - `frontend/src/pages/admin/Suppliers.jsx` � fmtDateTime helper; fixed LEDGER_COLORS; fixed r.transactionType / r.narration field names; Ref # column in Ledger & Statement
+---
+
+## 2026-02-25 23:20 — Integrations, Settings, Login & Sidebar overhaul
+
+**1. Integrations module (full-stack)**
+- New backend model `Integration` (slug, displayName, logo, isActive, apiKey, webhookUrl, config)
+- CRUD controller + routes for integrations at `/admin/integrations`
+- Dispatch webhook endpoint: `POST /admin/integrations/dispatch/send` sends order details (customerName, customerPhone, pickupAddress, deliveryAddress, priority, notes) to `https://dispatch.distrx.io/api/zapier/webhook` with `x-api-key` header
+- Frontend Integrations page with activate/deactivate toggle, API key management, and Dispatch card
+- Added `integrationsAPI` to frontend api.js
+
+**2. Login & branding**
+- Login page now uses `/logo.jpeg` instead of Store icon
+- Favicon changed from `vite.svg` to `/favicon.jpeg`
+- Sidebar logo updated to use `/logo.jpeg`
+
+**3. Default Dashboard on login**
+- AdminLayout auto-opens Dashboard tab when no tabs are open (on first load)
+
+**4. Sidebar reorganization**
+- Removed "Master Data" and "Storefront" sections
+- Users & Access moved under "Main"
+- Added "Integrations" section with Integrations page
+- Added "Settings" section replacing Storefront
+- Settings page has tabbed layout: Locations (Warehouses, Business Locations), Product Features (Categories, Brands, Units, Barcode Types), Ecom Features, Finance (Tax Slabs), Shipping Settings, Advance Settings, Email Settings
+
+**Files:**
+- `backend/src/models/org/Integration.js` (new)
+- `backend/src/models/org/index.js`
+- `backend/src/controllers/admin/integrations.controller.js` (new)
+- `backend/src/routes/admin/integrations.routes.js` (new)
+- `backend/src/routes/admin/index.js`
+- `frontend/src/api.js`
+- `frontend/src/pages/admin/Integrations.jsx` (new)
+- `frontend/src/pages/admin/Settings.jsx` (new)
+- `frontend/src/components/Sidebar.jsx`
+- `frontend/src/layouts/AdminLayout.jsx`
+- `frontend/src/pages/auth/AdminLogin.jsx`
+- `frontend/index.html`
+- `frontend/public/logo.jpeg` (new)
+- `frontend/public/favicon.jpeg` (new)
+
+---
+
+## 2026-02-25 23:45 — Settings sidebar expansion, cyan removal, Orders order# fix
+
+**1. Settings sidebar** — "Settings" section now lists all 8 sub-items directly (each opens as its own tab): Ecom Settings, Users & Access, Categories, Brands, Units, Barcode Types, Tax Slabs, Warehouses. Removed the combined Settings.jsx page from sidebar. Users & Access removed from Main section.
+
+**2. Cyan color removal** — Replaced all visible `cyan-*` Tailwind classes with violet/slate equivalents across admin pages:
+- App.jsx: loading spinner `text-cyan-400` → `text-violet-500`
+- PurchaseOrders.jsx: status stepper circles/lines `bg-cyan-500/20 ring-cyan-500/40` → `bg-violet-100 ring-violet-300`
+- Products.jsx: new variant row bg `bg-cyan-500/[0.04] border-cyan-500/[0.1]` → `bg-slate-50 border-slate-200`
+- Pricing.jsx: resolve result box `border-cyan-500/20 bg-cyan-500/5` → `border-violet-200 bg-violet-50/50`
+
+**3. Orders page** — Order # column changed from `text-violet-600` to `text-slate-700`
+
+**Files:**
+- `frontend/src/components/Sidebar.jsx`
+- `frontend/src/App.jsx`
+- `frontend/src/pages/admin/Orders.jsx`
+- `frontend/src/pages/admin/PurchaseOrders.jsx`
+- `frontend/src/pages/admin/Products.jsx`
+- `frontend/src/pages/admin/Pricing.jsx`
+
+---
+
+## 2026-02-26 — Google Maps address autocomplete, dispatch on order, cleanup
+
+**1. Google Maps address autocomplete on Customer create/edit**
+- New `AddressAutocomplete` component loads Google Places JS API dynamically
+- Address line input has live place suggestions; selecting a suggestion auto-fills City, State, Zip, Country
+- "Map" button opens an inline map picker — click anywhere on the map to drop a pin and reverse-geocode all address fields
+- Added `VITE_GOOGLE_MAPS_API_KEY` to `frontend/.env`
+
+**2. Dispatch webhook on order placed**
+- `orders.controller.js` now calls `fireDispatch()` (fire-and-forget) after every `createOrder`
+- Checks if `dispatch` integration is enabled & has an API key
+- Sends: `customerName`, `customerPhone`, `pickupAddress` (warehouse location), `deliveryAddress` (shipping address), `priority`, `notes`
+- Errors are swallowed — dispatch failure never breaks the order response
+
+**3. Cleanup**
+- Deleted unused `frontend/src/pages/admin/Settings.jsx` (orphaned after sidebar was reorganised into individual items)
+
+**Files:**
+- `frontend/.env`
+- `frontend/src/components/AddressAutocomplete.jsx` (new)
+- `frontend/src/pages/admin/Customers.jsx`
+- `backend/src/controllers/admin/orders.controller.js`
+- `frontend/src/pages/admin/Settings.jsx` (deleted)
+
+
+
+---
+
+## 2026-02-26 � Move Dispatch webhook trigger to placedprocessing transition
+
+`fireDispatch` is now called when an order transitions to `processing` status (not on initial order creation). Also removed test artifacts (hardcoded addresses, `console.table`, `console.log`) from `fireDispatch`.
+
+**Files:**
+- `backend/src/controllers/admin/orders.controller.js`
+
+---
+
+## 2026-02-26 � Google Maps location picker on Warehouse create/edit
+
+Replaced the plain location Input in the Warehouse modal with `AddressAutocomplete`, giving users autocomplete suggestions and a pin-on-map picker. Selected address is stored as a formatted string in the `location` field.
+
+**Files:**
+- `frontend/src/pages/admin/Warehouses.jsx`

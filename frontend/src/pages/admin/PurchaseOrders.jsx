@@ -456,9 +456,9 @@ export default function PurchaseOrders() {
             <div className="flex items-center gap-2 flex-wrap mt-4">
               {STATUS_FLOW.map((s, i) => (
                 <div key={s} className="flex items-center gap-2">
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${STATUS_FLOW.indexOf(current) >= i ? 'bg-cyan-500/20 text-violet-600 ring-2 ring-cyan-500/40' : 'bg-violet-50 text-gray-500'}`}>{i + 1}</div>
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${STATUS_FLOW.indexOf(current) >= i ? 'bg-violet-100 text-violet-700 ring-2 ring-violet-300' : 'bg-slate-100 text-gray-500'}`}>{i + 1}</div>
                   <span className={`text-sm ${STATUS_FLOW.indexOf(current) >= i ? 'text-slate-800' : 'text-gray-500'}`}>{s}</span>
-                  {i < STATUS_FLOW.length - 1 && <div className={`w-8 h-px ${STATUS_FLOW.indexOf(current) > i ? 'bg-cyan-500/40' : 'bg-violet-50'}`} />}
+                  {i < STATUS_FLOW.length - 1 && <div className={`w-8 h-px ${STATUS_FLOW.indexOf(current) > i ? 'bg-violet-200' : 'bg-slate-100'}`} />}
                 </div>
               ))}
             </div>

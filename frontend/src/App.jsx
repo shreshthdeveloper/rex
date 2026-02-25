@@ -14,7 +14,7 @@ function ProtectedRoute({ children, requiredRole }) {
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <Loader2 size={40} className="animate-spin text-cyan-400" />
+        <Loader2 size={40} className="animate-spin text-violet-500" />
       </div>
     );
   }

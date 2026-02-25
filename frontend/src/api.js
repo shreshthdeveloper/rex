@@ -215,6 +215,15 @@ export const ecomSettingsAPI = {
   update: (data) => api.put('/admin/ecom-settings', data, withToken('adminToken')),
 };
 
+export const integrationsAPI = {
+  list: () => api.get('/admin/integrations', withToken('adminToken')),
+  get: (slug) => api.get(`/admin/integrations/${slug}`, withToken('adminToken')),
+  upsert: (data) => api.put('/admin/integrations', data, withToken('adminToken')),
+  toggle: (slug) => api.patch(`/admin/integrations/${slug}/toggle`, {}, withToken('adminToken')),
+  delete: (slug) => api.delete(`/admin/integrations/${slug}`, withToken('adminToken')),
+  sendToDispatch: (data) => api.post('/admin/integrations/dispatch/send', data, withToken('adminToken')),
+};
+
 export const uploadAPI = {
   upload: (file) => {
     const fd = new FormData();

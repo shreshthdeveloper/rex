@@ -895,7 +895,7 @@ export default function Products() {
                         ? 'bg-amber-50/60 border-amber-200'
                         : v._existing
                         ? 'bg-violet-50/50 border-violet-100'
-                        : 'bg-cyan-500/[0.04] border-cyan-500/[0.1]'
+                        : 'bg-slate-50 border-slate-200'
                     }`}>
                       {/* Main row */}
                       <div className="grid grid-cols-12 gap-2 items-center p-2">

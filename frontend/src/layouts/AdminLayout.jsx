@@ -1,12 +1,25 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { TabProvider, useTabs } from '../context/TabContext';
 import Sidebar from '../components/Sidebar';
 import TabBar from '../components/TabBar';
 import { LayoutDashboard } from 'lucide-react';
+import Dashboard from '../pages/admin/Dashboard';
 
 function AdminContent() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const { activeTab, tabs } = useTabs();
+  const { activeTab, tabs, openTab } = useTabs();
+
+  /* Auto-open Dashboard tab when no tabs are open (first load or all closed) */
+  useEffect(() => {
+    if (tabs.length === 0) {
+      openTab({
+        id: 'dashboard',
+        label: 'Dashboard',
+        icon: LayoutDashboard,
+        component: Dashboard,
+      });
+    }
+  }, [tabs.length, openTab]);
 
   return (
     <div className="flex h-screen overflow-hidden">

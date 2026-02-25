@@ -170,7 +170,7 @@ export default function Pricing() {
           <Button onClick={handleResolve} loading={resolving}><Calculator size={16} /> Resolve Price</Button>
         </div>
         {resolveResult && (
-          <div className="mt-4 p-4 rounded-xl border border-cyan-500/20 bg-cyan-500/5">
+          <div className="mt-4 p-4 rounded-xl border border-violet-200 bg-violet-50/50">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               {resolveResult.basePrice != null && (
                 <div><p className="text-xs text-slate-500 uppercase">Base Price</p><p className="text-lg font-bold text-slate-800">₹{Number(resolveResult.basePrice).toFixed(2)}</p></div>

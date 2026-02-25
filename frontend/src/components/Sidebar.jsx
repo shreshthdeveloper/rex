@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Users, FolderTree, Ruler, Barcode, Receipt, Warehouse,
   Package, Layers, ShoppingCart, UserCircle, ClipboardList, Truck, FileText,
   Tag, DollarSign, BarChart3, Bell, ChevronDown, ChevronRight, LogOut,
-  Building2, Settings, Store, Zap
+  Building2, Settings, Store, Zap, Plug
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -29,24 +29,13 @@ import Reports from '../pages/admin/Reports';
 import Notifications from '../pages/admin/Notifications';
 import EcomSettings from '../pages/admin/EcomSettings';
 import Brands from '../pages/admin/Brands';
+import Integrations from '../pages/admin/Integrations';
 
 const menuSections = [
   {
     title: 'Main',
     items: [
       { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, component: Dashboard },
-    ],
-  },
-  {
-    title: 'Master Data',
-    items: [
-      { id: 'users', label: 'Users & Access', icon: Users, component: UsersPage },
-      { id: 'categories', label: 'Categories', icon: FolderTree, component: Categories },
-      { id: 'brands', label: 'Brands', icon: Tag, component: Brands },
-      { id: 'units', label: 'Units', icon: Ruler, component: Units },
-      { id: 'barcode-types', label: 'Barcode Types', icon: Barcode, component: BarcodeTypes },
-      { id: 'tax-slabs', label: 'Tax Slabs', icon: Receipt, component: TaxSlabs },
-      { id: 'warehouses', label: 'Warehouses', icon: Warehouse, component: Warehouses },
     ],
   },
   {
@@ -81,9 +70,22 @@ const menuSections = [
     ],
   },
   {
-    title: 'Storefront',
+    title: 'Integrations',
+    items: [
+      { id: 'integrations', label: 'Integrations', icon: Plug, component: Integrations },
+    ],
+  },
+  {
+    title: 'Settings',
     items: [
       { id: 'ecom-settings', label: 'Ecom Settings', icon: Store, component: EcomSettings },
+      { id: 'users', label: 'Users & Access', icon: Users, component: UsersPage },
+      { id: 'categories', label: 'Categories', icon: FolderTree, component: Categories },
+      { id: 'brands', label: 'Brands', icon: Tag, component: Brands },
+      { id: 'units', label: 'Units', icon: Ruler, component: Units },
+      { id: 'barcode-types', label: 'Barcode Types', icon: Barcode, component: BarcodeTypes },
+      { id: 'tax-slabs', label: 'Tax Slabs', icon: Receipt, component: TaxSlabs },
+      { id: 'warehouses', label: 'Warehouses', icon: Warehouse, component: Warehouses },
     ],
   },
 ];
@@ -117,13 +119,11 @@ export default function Sidebar({ collapsed, onToggle }) {
     <aside className={`glass-sidebar flex flex-col h-full transition-all duration-300 ${collapsed ? 'w-16' : 'w-64'}`}>
       {/* Logo */}
       <div className="flex items-center gap-3 px-4 h-16 border-b border-gray-200 flex-shrink-0">
-        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-600 to-purple-700 flex items-center justify-center flex-shrink-0">
-          <Store size={18} className="text-white" />
-        </div>
+        <img src="/logo.jpeg" alt="Rex" className="w-8 h-8 rounded-lg object-cover flex-shrink-0" />
         {!collapsed && (
           <div className="overflow-hidden">
-            <h1 className="text-sm font-bold text-slate-800 truncate">E-Commerce</h1>
-            <p className="text-[10px] text-violet-500 truncate">Multi-Tenant Platform</p>
+            <h1 className="text-sm font-bold text-slate-800 truncate">Rex</h1>
+            <p className="text-[10px] text-violet-500 truncate">E-Commerce Platform</p>
           </div>
         )}
       </div>

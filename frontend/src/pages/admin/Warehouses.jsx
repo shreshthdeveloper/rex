@@ -3,6 +3,7 @@ import { useToast } from '../../context/ToastContext';
 import { PageHeader, Button, Modal, Input, DataTable, Badge, ConfirmDialog, GlassCard, SearchInput, Loader } from '../../components/ui';
 import { warehousesAPI } from '../../api';
 import { Warehouse as WarehouseIcon, Plus, Edit, Trash2, Eye, Package, Layers } from 'lucide-react';
+import AddressAutocomplete from '../../components/AddressAutocomplete';
 
 const emptyForm = {
   name: '', code: '', location: '', contactPerson: '', phone: '',
@@ -209,7 +210,18 @@ export default function Warehouses() {
             <Input label="Name" value={form.name} onChange={set('name')} placeholder="Warehouse name" />
             <Input label="Code" value={form.code} onChange={set('code')} placeholder="e.g. WH-001" />
           </div>
-          <Input label="Location" value={form.location} onChange={set('location')} placeholder="Location / address" />
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">Location</label>
+            <AddressAutocomplete
+              value={form.location}
+              onChange={(val) => setForm((p) => ({ ...p, location: val }))}
+              onAddressSelect={({ formatted, line1, city, state, zip, country }) => {
+                const full = formatted || [line1, city, state, zip, country].filter(Boolean).join(', ');
+                setForm((p) => ({ ...p, location: full }));
+              }}
+              placeholder="Search or pick on map..."
+            />
+          </div>
           <div className="grid grid-cols-2 gap-4">
             <Input label="Contact Person" value={form.contactPerson} onChange={set('contactPerson')} placeholder="Contact person name" />
             <Input label="Phone" value={form.phone} onChange={set('phone')} placeholder="Phone number" />

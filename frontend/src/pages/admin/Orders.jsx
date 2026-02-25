@@ -479,7 +479,7 @@ export default function Orders() {
   });
 
   const columns = [
-    { key: 'orderNumber', label: 'Order #', render: (r) => <span className="font-mono text-violet-600 font-semibold">{r.orderNumber}</span> },
+    { key: 'orderNumber', label: 'Order #', render: (r) => <span className="font-mono text-slate-700 font-semibold">{r.orderNumber}</span> },
     {
       key: 'actions', label: 'Actions', render: (r) => (
         <div className="flex gap-1">

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
-import { Store, Loader2, Eye, EyeOff } from 'lucide-react';
+import { Loader2, Eye, EyeOff } from 'lucide-react';
 
 export default function AdminLogin() {
   const [email, setEmail] = useState('');
@@ -38,9 +38,11 @@ export default function AdminLogin() {
       <div className="w-full max-w-md relative">
         <div className="glass-modal p-8">
           <div className="flex flex-col items-center mb-8">
-            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-violet-600 to-purple-700 flex items-center justify-center mb-4 shadow-lg shadow-violet-500/20">
-              <Store size={28} className="text-white" />
-            </div>
+            <img
+              src="/logo.jpeg"
+              alt="Rex"
+              className="w-16 h-16 rounded-2xl object-cover mb-4 shadow-lg shadow-violet-500/20"
+            />
             <h1 className="text-xl font-bold text-slate-800">Admin Panel</h1>
             <p className="text-sm text-slate-500 mt-1">Sign in to manage your store</p>
           </div>
