@@ -18,5 +18,6 @@ router.post('/:id/payments', accountantPlus, ctrl.recordPayment);
 router.post('/:id/adjust', managerPlus, ctrl.adjust);
 router.get('/:id/purchase-orders', managerPlus, ctrl.getPurchaseOrders);
 router.get('/:id/statement', accountantPlus, ctrl.getStatement);
+router.get('/:id/reconcile', managerPlus, ctrl.reconcile);
 
 module.exports = router;

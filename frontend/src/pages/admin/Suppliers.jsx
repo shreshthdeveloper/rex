@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useToast } from '../../context/ToastContext';
 import { PageHeader, Button, Modal, Input, Select, DataTable, Badge, ConfirmDialog, GlassCard, SearchInput, Loader, TabList, Textarea, Pagination } from '../../components/ui';
 import { suppliersAPI } from '../../api';
-import { Plus, Edit, Trash2, Eye, Truck, Wallet, CreditCard, FileText, ArrowUpCircle } from 'lucide-react';
+import { Plus, Edit, Trash2, Eye, Truck, Wallet, CreditCard, FileText, ArrowUpCircle, RefreshCw } from 'lucide-react';
 
 const PAYMENT_METHODS = [
   { value: 'cash', label: 'Cash' },
@@ -17,9 +17,9 @@ const ADJUST_TYPES = [
 ];
 
 const LEDGER_COLORS = {
-  purchase: 'red', debit: 'red', debit_adjustment: 'red',
-  payment: 'green', credit: 'green', credit_adjustment: 'green',
-  opening_balance: 'amber',
+  purchase_invoice: 'red', debit_note: 'red', debit_adjustment: 'red',
+  payment: 'green', credit_note: 'green', credit_adjustment: 'green', balance_topup: 'green',
+  balance_adjustment: 'amber', opening_balance: 'amber',
 };
 
 const DETAIL_TABS = [
@@ -48,6 +48,17 @@ function fmtCurrency(v) {
 function fmtDate(d) {
   if (!d) return '-';
   return new Date(d).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+}
+
+function fmtDateTime(d) {
+  if (!d) return '-';
+  const date = new Date(d);
+  return (
+    <span>
+      <span className="block">{date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}</span>
+      <span className="block text-xs text-slate-400">{date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}</span>
+    </span>
+  );
 }
 
 export default function Suppliers() {
@@ -275,18 +286,20 @@ export default function Suppliers() {
 
   /* ───── DETAIL TABLES ───── */
   const ledgerColumns = [
-    { key: 'date', label: 'Date', render: (r) => fmtDate(r.date || r.createdAt) },
-    { key: 'type', label: 'Type', render: (r) => <Badge color={LEDGER_COLORS[r.type] || 'gray'}>{r.type}</Badge> },
-    { key: 'description', label: 'Description', render: (r) => r.description || '-' },
+    { key: 'date', label: 'Date', render: (r) => fmtDateTime(r.date || r.createdAt) },
+    { key: 'ref', label: 'Ref #', render: (r) => r.referenceNumber ? <span className="text-violet-600 font-mono text-xs">{r.referenceNumber}</span> : <span className="text-slate-400">—</span> },
+    { key: 'type', label: 'Type', render: (r) => <Badge color={LEDGER_COLORS[r.transactionType] || 'gray'}>{r.transactionType}</Badge> },
+    { key: 'description', label: 'Description', render: (r) => r.narration || '-' },
     { key: 'debit', label: 'Debit', render: (r) => r.debit ? <span className="text-red-400">{fmtCurrency(r.debit)}</span> : '-' },
     { key: 'credit', label: 'Credit', render: (r) => r.credit ? <span className="text-emerald-400">{fmtCurrency(r.credit)}</span> : '-' },
     { key: 'balanceAfter', label: 'Balance', render: (r) => fmtCurrency(r.balanceAfter) },
   ];
 
   const statementColumns = [
-    { key: 'date', label: 'Date', render: (r) => fmtDate(r.date || r.createdAt) },
-    { key: 'type', label: 'Type', render: (r) => <Badge color={LEDGER_COLORS[r.type] || 'gray'}>{r.type}</Badge> },
-    { key: 'description', label: 'Description', render: (r) => r.description || r.reference || '-' },
+    { key: 'date', label: 'Date', render: (r) => fmtDateTime(r.date || r.createdAt) },
+    { key: 'ref', label: 'Ref #', render: (r) => r.referenceNumber ? <span className="text-violet-600 font-mono text-xs">{r.referenceNumber}</span> : <span className="text-slate-400">—</span> },
+    { key: 'type', label: 'Type', render: (r) => <Badge color={LEDGER_COLORS[r.transactionType] || 'gray'}>{r.transactionType}</Badge> },
+    { key: 'description', label: 'Description', render: (r) => r.narration || '-' },
     { key: 'debit', label: 'Debit', render: (r) => r.debit ? <span className="text-red-400">{fmtCurrency(r.debit)}</span> : '-' },
     { key: 'credit', label: 'Credit', render: (r) => r.credit ? <span className="text-emerald-400">{fmtCurrency(r.credit)}</span> : '-' },
     { key: 'balanceAfter', label: 'Balance', render: (r) => fmtCurrency(r.balanceAfter ?? r.runningBalance) },
@@ -334,6 +347,21 @@ export default function Suppliers() {
             <p className="text-xs text-gray-500 text-center">
               Positive balance = we owe them &nbsp;|&nbsp; Negative balance = advance credit
             </p>
+            <div className="text-center">
+              <Button size="sm" variant="ghost" onClick={async () => {
+                try {
+                  const res = await suppliersAPI.reconcile(detailSupplier._id);
+                  const d = res.data || res;
+                  if (d.match) {
+                    toast.success('Balance is accurate — no drift detected');
+                  } else {
+                    toast.success(`Balance corrected: ₹${d.stored} → ₹${d.computed} (drift: ₹${d.diff})`);
+                    // refresh balance display
+                    try { const r = await suppliersAPI.getBalance(detailSupplier._id); setBalanceData(r.data || r); } catch {}
+                  }
+                } catch (err) { toast.error(err.message || 'Reconciliation failed'); }
+              }}><RefreshCw size={14} /> Reconcile Balance</Button>
+            </div>
           </div>
         );
 

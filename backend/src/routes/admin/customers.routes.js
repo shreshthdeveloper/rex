@@ -17,6 +17,7 @@ router.get('/:id/balance', cashierPlus, ctrl.getBalance);
 router.post('/:id/topup', cashierPlus, ctrl.topup);
 router.post('/:id/adjust', managerPlus, ctrl.adjust);
 router.get('/:id/statement', accountantPlus, ctrl.getStatement);
+router.get('/:id/reconcile', managerPlus, ctrl.reconcile);
 
 // Linked data
 router.get('/:id/orders', cashierPlus, ctrl.getOrders);

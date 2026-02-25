@@ -134,6 +134,7 @@ export const customersAPI = {
   getOrders: (id, params) => api.get(`/admin/customers/${id}/orders`, { ...withToken('adminToken'), params }),
   getPayments: (id, params) => api.get(`/admin/customers/${id}/payments`, { ...withToken('adminToken'), params }),
   getTopups: (id, params) => api.get(`/admin/customers/${id}/topups`, { ...withToken('adminToken'), params }),
+  reconcile: (id) => api.get(`/admin/customers/${id}/reconcile`, withToken('adminToken')),
 };
 
 export const ordersAPI = {
@@ -157,6 +158,7 @@ export const suppliersAPI = {
   adjust: (id, data) => api.post(`/admin/suppliers/${id}/adjust`, data, withToken('adminToken')),
   getPurchaseOrders: (id, params) => api.get(`/admin/suppliers/${id}/purchase-orders`, { ...withToken('adminToken'), params }),
   getStatement: (id, params) => api.get(`/admin/suppliers/${id}/statement`, { ...withToken('adminToken'), params }),
+  reconcile: (id) => api.get(`/admin/suppliers/${id}/reconcile`, withToken('adminToken')),
 };
 
 export const purchaseOrdersAPI = {
@@ -169,6 +171,7 @@ export const purchaseOrdersAPI = {
   rejectGRN: (id) => api.patch(`/admin/purchase-orders/grn/${id}/reject`, {}, withToken('adminToken')),
   createReturn: (data) => api.post('/admin/purchase-orders/returns', data, withToken('adminToken')),
   listReturns: (params) => api.get('/admin/purchase-orders/returns/list', { ...withToken('adminToken'), params }),
+  approveReturn: (returnId) => api.patch(`/admin/purchase-orders/returns/${returnId}/approve`, {}, withToken('adminToken')),
 };
 
 export const couponsAPI = {
@@ -191,6 +194,13 @@ export const reportsAPI = {
   customerAging: (params) => api.get('/admin/reports/customer-aging', { ...withToken('adminToken'), params }),
   supplierAging: (params) => api.get('/admin/reports/supplier-aging', { ...withToken('adminToken'), params }),
   profitLoss: (params) => api.get('/admin/reports/profit-loss', { ...withToken('adminToken'), params }),
+  cashFlow: (params) => api.get('/admin/reports/cash-flow', { ...withToken('adminToken'), params }),
+  reconcileAll: (params) => api.get('/admin/reports/reconcile-all', { ...withToken('adminToken'), params }),
+};
+
+export const transactionLogAPI = {
+  list: (params) => api.get('/admin/transaction-log', { ...withToken('adminToken'), params }),
+  summary: (params) => api.get('/admin/transaction-log/summary', { ...withToken('adminToken'), params }),
 };
 
 export const notificationsAPI = {

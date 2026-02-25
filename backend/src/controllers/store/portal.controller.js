@@ -139,16 +139,15 @@ const placeOrder = asyncHandler(async (req, res) => {
     });
     await order.save({ session });
 
-    // Deduct balance and record ledger
+    // Deduct balance via ledger (atomic $inc handles the balance update)
     if (balanceUsed > 0) {
-      customer.currentBalance -= balanceUsed;
-      await customer.save({ session });
-
       await createCustomerLedgerEntry(req.models, {
-        customerId: customer._id, transactionType: 'invoice',
+        customerId: customer._id, transactionType: 'payment',
         referenceType: 'order', referenceId: order._id, referenceNumber: orderNumber,
-        debit: balanceUsed, credit: 0,
-        narration: `Order ${orderNumber} - wallet payment`, userId: null,
+        debit: 0, credit: balanceUsed,
+        narration: `Order ${orderNumber} - wallet payment`,
+        userId: null,
+        idempotencyKey: `order:${order._id}:wallet`,
       }, session);
     }
 
@@ -159,7 +158,9 @@ const placeOrder = asyncHandler(async (req, res) => {
         customerId: customer._id, transactionType: 'invoice',
         referenceType: 'order', referenceId: order._id, referenceNumber: orderNumber,
         debit: onCredit, credit: 0,
-        narration: `Order ${orderNumber} - amount on credit`, userId: null,
+        narration: `Order ${orderNumber} - amount on credit`,
+        userId: null,
+        idempotencyKey: `order:${order._id}:credit`,
       }, session);
     }
     return order;
@@ -180,19 +181,15 @@ const cancelOrder = asyncHandler(async (req, res) => {
       await releaseReserved(req.models, item.product, order.warehouse, item.quantity, session);
     }
 
-    // Refund any paid amount back to balance
+    // Refund any paid amount back to balance via ledger (atomic $inc)
     if (order.amountPaid > 0) {
-      const customer = await req.models.Customer.findById(req.customer._id).session(session);
-      if (customer) {
-        customer.currentBalance += order.amountPaid;
-        await customer.save({ session });
-      }
-
       await createCustomerLedgerEntry(req.models, {
         customerId: req.customer._id, transactionType: 'credit_note',
         referenceType: 'order', referenceId: order._id, referenceNumber: order.orderNumber,
         debit: 0, credit: order.amountPaid,
-        narration: `Order ${order.orderNumber} cancelled - refund to balance`, userId: null,
+        narration: `Order ${order.orderNumber} cancelled - refund to balance`,
+        userId: null,
+        idempotencyKey: `order:${order._id}:cancel`,
       }, session);
     }
 

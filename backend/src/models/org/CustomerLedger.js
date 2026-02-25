@@ -22,16 +22,24 @@ const customerLedgerSchema = new mongoose.Schema(
     credit: { type: Number, default: 0 },
     balanceAfter: { type: Number, required: true },
     narration: { type: String, default: '' },
+    idempotencyKey: { type: String, default: null },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   },
   { timestamps: true }
 );
 
-// Immutable
-customerLedgerSchema.pre('findOneAndUpdate', function () {
-  throw new Error('Customer ledger records are immutable');
-});
+// Immutable — block every possible mutation route
+const IMMUTABLE_MSG = 'Customer ledger records are immutable';
+customerLedgerSchema.pre('findOneAndUpdate', function () { throw new Error(IMMUTABLE_MSG); });
+customerLedgerSchema.pre('updateOne', function () { throw new Error(IMMUTABLE_MSG); });
+customerLedgerSchema.pre('updateMany', function () { throw new Error(IMMUTABLE_MSG); });
+customerLedgerSchema.pre('replaceOne', function () { throw new Error(IMMUTABLE_MSG); });
+customerLedgerSchema.pre('findOneAndReplace', function () { throw new Error(IMMUTABLE_MSG); });
+customerLedgerSchema.pre('deleteOne', function () { throw new Error(IMMUTABLE_MSG); });
+customerLedgerSchema.pre('deleteMany', function () { throw new Error(IMMUTABLE_MSG); });
+customerLedgerSchema.pre('findOneAndDelete', function () { throw new Error(IMMUTABLE_MSG); });
 
 customerLedgerSchema.index({ customer: 1, createdAt: -1 });
+customerLedgerSchema.index({ idempotencyKey: 1 }, { unique: true, sparse: true });
 
 module.exports = customerLedgerSchema;

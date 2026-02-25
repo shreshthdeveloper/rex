@@ -330,7 +330,7 @@ export default function PurchaseOrders() {
         items: validItems.map((i) => ({ product: i.product, quantity: Number(i.quantity), unitCost: Number(i.unitCost), reason: i.reason })),
         notes: returnForm.notes,
       });
-      toast.success('Return created');
+      toast.success('Return created (pending approval)');
       closeReturnModal();
       fetchDetailTab('returns');
       fetchOrders();
@@ -338,6 +338,17 @@ export default function PurchaseOrders() {
       toast.error(err.message || 'Failed to create return');
     } finally {
       setReturnSaving(false);
+    }
+  };
+
+  const handleApproveReturn = async (returnId) => {
+    try {
+      await purchaseOrdersAPI.approveReturn(returnId);
+      toast.success('Purchase return approved — stock & ledger updated');
+      fetchDetailTab('returns');
+      fetchOrders();
+    } catch (err) {
+      toast.error(err.message || 'Failed to approve return');
     }
   };
 
@@ -519,9 +530,19 @@ export default function PurchaseOrders() {
               <div className="space-y-3">
                 {returnList.map((ret) => (
                   <GlassCard key={ret._id}>
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-slate-800 font-medium text-sm">Return #{ret._id?.slice(-6)}</span>
-                      <span className="text-slate-500 text-xs">{fmtDate(ret.createdAt)}</span>
+                    <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                      <div>
+                        <span className="text-slate-800 font-medium text-sm">Return #{ret._id?.slice(-6)}</span>
+                        <span className="text-slate-500 text-xs ml-3">{fmtDate(ret.createdAt)}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Badge color={ret.status === 'approved' ? 'green' : ret.status === 'initiated' ? 'amber' : 'gray'}>{ret.status || 'initiated'}</Badge>
+                        {(!ret.status || ret.status === 'initiated') && (
+                          <Button size="sm" variant="ghost" className="!text-emerald-400" onClick={() => handleApproveReturn(ret._id)}>
+                            <CheckCircle size={14} /> Approve
+                          </Button>
+                        )}
+                      </div>
                     </div>
                     <table className="w-full text-xs text-slate-600">
                       <thead><tr className="text-gray-500 text-left border-b border-violet-50">

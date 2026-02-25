@@ -23,6 +23,8 @@ const purchaseReturnSchema = new mongoose.Schema(
     },
     notes: { type: String, default: '' },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    approvedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+    approvedAt: { type: Date, default: null },
   },
   { timestamps: true }
 );

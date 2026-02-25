@@ -38,7 +38,7 @@ const create = asyncHandler(async (req, res) => {
       const adj = new req.models.SupplierAdjustment({
         adjustmentNumber: adjNum, supplier: supplier._id, amount: req.body.openingBalance,
         type: 'opening_balance', narration: 'Opening balance',
-        balanceBefore: 0, balanceAfter: req.body.openingBalance, createdBy: req.user._id,
+        createdBy: req.user._id,
       });
       await adj.save({ session });
       await createSupplierLedgerEntry(req.models, {
@@ -46,6 +46,7 @@ const create = asyncHandler(async (req, res) => {
         referenceType: 'manual', referenceId: adj._id, referenceNumber: adjNum,
         debit: req.body.openingBalance, credit: 0,
         narration: 'Opening balance carried forward', userId: req.user._id,
+        idempotencyKey: `adj:${adj._id}:opening`,
       }, session);
     });
   }
@@ -83,7 +84,7 @@ const getLedger = asyncHandler(async (req, res) => {
   const { skip, limit: lim, page: pg } = paginate(page, limit);
   const filter = { supplier: req.params.id };
   const [entries, total] = await Promise.all([
-    req.models.SupplierLedger.find(filter).sort({ createdAt: 1 }).skip(skip).limit(lim),
+    req.models.SupplierLedger.find(filter).sort({ createdAt: -1 }).skip(skip).limit(lim),
     req.models.SupplierLedger.countDocuments(filter),
   ]);
   res.json(new ApiResponse(200, { entries, pagination: paginationMeta(total, pg, lim) }));
@@ -101,13 +102,11 @@ const recordPayment = asyncHandler(async (req, res) => {
     const supplier = await req.models.Supplier.findById(req.params.id).session(session);
     if (!supplier) throw new ApiError(404, 'Supplier not found');
     const payNum = await getNextSequence(req.models, 'supplier_payment', 'SPAY-');
-    const balanceBefore = supplier.currentBalance;
     const payment = new req.models.SupplierPayment({
       paymentNumber: payNum, supplier: supplier._id,
       purchaseOrder: purchaseOrder || null, amount,
       method: method || 'bank_transfer', reference: reference || '',
       narration: narration || 'Payment to supplier', paymentDate: new Date(),
-      balanceBefore, balanceAfter: balanceBefore - amount,
       createdBy: req.user._id,
     });
     await payment.save({ session });
@@ -117,6 +116,7 @@ const recordPayment = asyncHandler(async (req, res) => {
       referenceType: 'payment', referenceId: payment._id, referenceNumber: payNum,
       debit: 0, credit: amount, narration: narration || `Payment via ${method || 'bank_transfer'} ${payNum}`,
       userId: req.user._id,
+      idempotencyKey: `spay:${payment._id}:posted`,
     }, session);
 
     // Update PO amountPaid if linked
@@ -139,17 +139,12 @@ const adjust = asyncHandler(async (req, res) => {
     const supplier = await req.models.Supplier.findById(req.params.id).session(session);
     if (!supplier) throw new ApiError(404, 'Supplier not found');
     const adjNum = await getNextSequence(req.models, 'supplier_adjustment', 'SADJ-');
-    const balanceBefore = supplier.currentBalance;
-    const debit = ['topup', 'debit_adjustment'].includes(type) ? amount : 0;
-    const credit = ['credit_adjustment'].includes(type) ? amount : 0;
-    // For topup (advance to supplier): credit reduces what we owe
     const actualDebit = type === 'debit_adjustment' ? amount : 0;
     const actualCredit = type === 'topup' ? amount : type === 'credit_adjustment' ? amount : 0;
 
     const adj = new req.models.SupplierAdjustment({
       adjustmentNumber: adjNum, supplier: supplier._id, amount,
       type, narration: narration || `Manual ${type}`,
-      balanceBefore, balanceAfter: balanceBefore + actualDebit - actualCredit,
       createdBy: req.user._id,
     });
     await adj.save({ session });
@@ -161,6 +156,7 @@ const adjust = asyncHandler(async (req, res) => {
       referenceId: adj._id, referenceNumber: adjNum,
       debit: actualDebit, credit: actualCredit,
       narration: narration || `Manual ${type}`, userId: req.user._id,
+      idempotencyKey: `sadj:${adj._id}:adjustment`,
     }, session);
     return adj;
   });
@@ -185,8 +181,42 @@ const getStatement = asyncHandler(async (req, res) => {
   res.json(new ApiResponse(200, { supplier, entries }));
 });
 
+/**
+ * Reconcile — compares stored balance to the sum of all ledger entries.
+ */
+const reconcile = asyncHandler(async (req, res) => {
+  const supplier = await req.models.Supplier.findById(req.params.id);
+  if (!supplier) throw new ApiError(404, 'Supplier not found');
+
+  const agg = await req.models.SupplierLedger.aggregate([
+    { $match: { supplier: supplier._id } },
+    { $group: { _id: null, totalDebit: { $sum: '$debit' }, totalCredit: { $sum: '$credit' }, count: { $sum: 1 } } },
+  ]);
+  const { totalDebit = 0, totalCredit = 0, count = 0 } = agg[0] || {};
+  const computedBalance = Math.round((totalDebit - totalCredit) * 100) / 100;
+  const storedBalance = Math.round((supplier.currentBalance || 0) * 100) / 100;
+  const difference = Math.round((storedBalance - computedBalance) * 100) / 100;
+  const match = Math.abs(difference) < 0.01;
+
+  if (req.query.fix === 'true' && !match) {
+    supplier.currentBalance = computedBalance;
+    await supplier.save();
+  }
+
+  res.json(new ApiResponse(200, {
+    supplierId: supplier._id,
+    name: supplier.name,
+    storedBalance,
+    computedBalance,
+    difference,
+    match,
+    entryCount: count,
+    fixed: req.query.fix === 'true' && !match,
+  }));
+});
+
 module.exports = {
   list, create, getById, update, remove,
   getLedger, getBalance, recordPayment, adjust,
-  getPurchaseOrders, getStatement,
+  getPurchaseOrders, getStatement, reconcile,
 };

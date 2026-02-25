@@ -2,12 +2,17 @@ import { useState, useEffect, useCallback } from 'react';
 import { useToast } from '../../context/ToastContext';
 import { PageHeader, DataTable, Badge, GlassCard, Loader, StatCard } from '../../components/ui';
 import { reportsAPI } from '../../api';
-import { ShoppingCart, DollarSign, Users, Package } from 'lucide-react';
+import { ShoppingCart, DollarSign, Users, Package, TrendingUp, TrendingDown, Wallet, AlertTriangle } from 'lucide-react';
 
 export default function Dashboard() {
   const toast = useToast();
   const [loading, setLoading] = useState(true);
-  const [stats, setStats] = useState({ totalOrders: 0, totalRevenue: 0, totalCustomers: 0, totalProducts: 0 });
+  const [stats, setStats] = useState({
+    totalOrders: 0, totalRevenue: 0, totalCustomers: 0, totalProducts: 0,
+    todayOrders: 0, todayRevenue: 0, todayCollected: 0,
+    outstandingReceivable: 0, outstandingPayable: 0,
+    lowStockCount: 0, pendingPOs: 0,
+  });
   const [recentOrders, setRecentOrders] = useState([]);
   const [topProducts, setTopProducts] = useState([]);
 
@@ -21,6 +26,13 @@ export default function Dashboard() {
         totalRevenue: d.totalRevenue || 0,
         totalCustomers: d.totalCustomers || 0,
         totalProducts: d.totalProducts || 0,
+        todayOrders: d.todayOrders || 0,
+        todayRevenue: d.todayRevenue || 0,
+        todayCollected: d.todayCollected || 0,
+        outstandingReceivable: d.outstandingReceivable || 0,
+        outstandingPayable: d.outstandingPayable || 0,
+        lowStockCount: d.lowStockCount || 0,
+        pendingPOs: d.pendingPOs || 0,
       });
       setRecentOrders(d.recentOrders || []);
       setTopProducts(d.topProducts || []);
@@ -56,6 +68,21 @@ export default function Dashboard() {
         <StatCard label="Total Revenue" value={`₹${stats.totalRevenue.toLocaleString()}`} icon={DollarSign} color="green" />
         <StatCard label="Customers" value={stats.totalCustomers.toLocaleString()} icon={Users} color="purple" />
         <StatCard label="Products" value={stats.totalProducts.toLocaleString()} icon={Package} color="amber" />
+      </div>
+
+      {/* Financial Stats */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <StatCard label="Today's Orders" value={stats.todayOrders.toLocaleString()} icon={ShoppingCart} color="cyan" />
+        <StatCard label="Today's Revenue" value={`₹${stats.todayRevenue.toLocaleString()}`} icon={DollarSign} color="green" />
+        <StatCard label="Cash Collected Today" value={`₹${stats.todayCollected.toLocaleString()}`} icon={Wallet} color="green" />
+        <StatCard label="Outstanding Receivable" value={`₹${stats.outstandingReceivable.toLocaleString()}`} icon={TrendingUp} color="amber" />
+      </div>
+
+      {/* Operational Stats */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <StatCard label="Outstanding Payable" value={`₹${stats.outstandingPayable.toLocaleString()}`} icon={TrendingDown} color="red" />
+        {stats.pendingPOs > 0 && <StatCard label="Pending POs" value={stats.pendingPOs} icon={Package} color="amber" />}
+        {stats.lowStockCount > 0 && <StatCard label="Low Stock Items" value={stats.lowStockCount} icon={AlertTriangle} color="red" />}
       </div>
 
       {/* Top Products */}

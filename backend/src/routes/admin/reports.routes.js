@@ -11,5 +11,7 @@ router.get('/stock', managerPlus, ctrl.stockReport);
 router.get('/customer-aging', accountantPlus, ctrl.customerAgingReport);
 router.get('/supplier-aging', accountantPlus, ctrl.supplierAgingReport);
 router.get('/profit-loss', managerPlus, ctrl.profitAndLoss);
+router.get('/cash-flow', managerPlus, ctrl.cashFlowReport);
+router.get('/reconcile-all', managerPlus, ctrl.reconcileAll);
 
 module.exports = router;

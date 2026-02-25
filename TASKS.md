@@ -263,3 +263,83 @@ Removed duplicate `schema.index()` calls on fields that already declare `unique:
 
 **Files:** backend/src/controllers/admin/orders.controller.js, backend/tests/returns_e2e.js, backend/src/models/org/Customer.js, backend/src/models/org/Order.js, backend/src/models/org/Product.js
 
+---
+
+## 2025-06-25 18:00 — Comprehensive Ledger Implementation Plan
+
+Full codebase audit (32 models, 21 route files, 12 controllers, 4 services, complete frontend API layer) leading to a production-grade ledger implementation plan.
+
+**Identified:** 11 bugs (4 critical, 7 significant) + 8 design gaps. Mapped all 10 customer financial events, 5 supplier events, and 9 stock movement types.
+
+**Plan:** 6-phase implementation covering bug fixes → atomic balance hardening → central Transaction Log → report fixes → purchase return approval flow → redundant document cleanup. Estimated 8-12 days total effort.
+
+**Files:** LEDGER_IMPLEMENTATION_PLAN.md
+
+---
+
+## 2025-07-22 14:00 — Ledger Implementation: All 6 Phases Complete
+
+Full implementation of the 6-phase production-grade ledger system. All backend phases done, frontend updated, 98/98 E2E tests passing, frontend build clean.
+
+### Phase 1: Critical Bug Fixes (BUG-1 through BUG-9)
+- BUG-1: Advance payments now posted to ledger when order → processing
+- BUG-2: Cancel now credits `grandTotal - sellReturn` (no double-credit on returns)
+- BUG-3: Removed `shipped` from `placed`'s transitions (must go through `processing`)
+- BUG-5: `refundAmount` now calculates per-return delta, not cumulative
+- BUG-6: Supplier ledger sorted newest-first
+- BUG-7: Purchase returns use `purchase_return_out` movement type
+- BUG-8+9: Stock transfers & bulk adjustments wrapped in transactions
+
+### Phase 2: Atomic Balance + Idempotency + Reconciliation
+- Rewrote `ledgerService` with atomic `$inc` (eliminates race conditions)
+- Added `idempotencyKey` (sparse unique index) to CustomerLedger & SupplierLedger
+- Strengthened immutability guards on CustomerLedger, SupplierLedger, StockMovement
+- Added reconcile endpoints for customers & suppliers (detect + auto-fix drift)
+- Added reconcile-all endpoint in reports
+
+### Phase 3: Central Transaction Log
+- New `TransactionLog` model — immutable central audit trail for all financial events
+- New controller + routes (`GET /admin/transaction-log`, `GET /admin/transaction-log/summary`)
+- Ledger service writes to both sub-ledger + central log atomically
+
+### Phase 4: Report Fixes
+- P&L: Subtracts sell returns from revenue, uses item-level COGS
+- Dashboard: Added `outstandingReceivable`, `outstandingPayable`, `todayCollected`
+- Aging: Proper 0-30, 30-60, 60-90, 90+ day buckets
+- New cash flow report from TransactionLog aggregation
+
+### Phase 5: Purchase Return Approval Flow
+- Returns created as `status: 'initiated'` (pending) — no stock/ledger side effects
+- New `approvePurchaseReturn` endpoint deducts stock + posts supplier credit note
+
+### Phase 6: Remove Redundant Balance Documents
+- Made `balanceBefore`/`balanceAfter` optional on CustomerTopup, SupplierPayment, SupplierAdjustment
+- Removed manual balance computation from controllers (ledger service is source of truth)
+
+### Frontend Updates
+- `api.js`: Added 5 new endpoints (approveReturn, cashFlow, reconcileAll, reconcile x2, transactionLog)
+- `Dashboard.jsx`: Shows todayOrders, todayRevenue, cashCollectedToday, outstandingReceivable, outstandingPayable, lowStockCount, pendingPOs
+- `Reports.jsx`: Added Cash Flow tab (date range + daily/weekly/monthly grouping) and Transaction Log tab (filterable central audit trail)
+- `PurchaseOrders.jsx`: Returns show status badge + approve button for pending returns
+- `Customers.jsx`: Added reconcile button on balance tab
+- `Suppliers.jsx`: Added reconcile button on balance tab
+
+**Files:**
+- **New:** backend/src/models/org/TransactionLog.js, backend/src/controllers/admin/transactionLog.controller.js, backend/src/routes/admin/transactionLog.routes.js
+- **Backend modified:** backend/src/services/ledgerService.js, backend/src/models/org/CustomerLedger.js, backend/src/models/org/SupplierLedger.js, backend/src/models/org/StockMovement.js, backend/src/models/org/CustomerTopup.js, backend/src/models/org/SupplierPayment.js, backend/src/models/org/SupplierAdjustment.js, backend/src/models/org/PurchaseReturn.js, backend/src/models/org/index.js, backend/src/controllers/admin/orders.controller.js, backend/src/controllers/admin/customers.controller.js, backend/src/controllers/admin/suppliers.controller.js, backend/src/controllers/admin/purchaseOrders.controller.js, backend/src/controllers/admin/stock.controller.js, backend/src/controllers/admin/reports.controller.js, backend/src/controllers/store/portal.controller.js, backend/src/routes/admin/index.js, backend/src/routes/admin/customers.routes.js, backend/src/routes/admin/suppliers.routes.js, backend/src/routes/admin/purchaseOrders.routes.js, backend/src/routes/admin/reports.routes.js
+- **Frontend modified:** frontend/src/api.js, frontend/src/pages/admin/Dashboard.jsx, frontend/src/pages/admin/Reports.jsx, frontend/src/pages/admin/PurchaseOrders.jsx, frontend/src/pages/admin/Customers.jsx, frontend/src/pages/admin/Suppliers.jsx
+
+---
+
+## 2025-07-16 � Ledger datetime display + reference numbers
+
+**Date & Time display:** All ledger-related tables now show full date + time (time rendered in smaller text below the date) instead of date-only.
+
+**Reference numbers:** Added `Ref #` column to every ledger/statement table. Customer topups now show their auto-generated `topupNumber` (e.g. `TOP-00001`). Customer payments now surface the linked order number via a newly added `.populate('order', 'orderNumber')` in `getPayments`.
+
+**Bug fixes in Suppliers.jsx:** Ledger and Statement columns were silently blank because they used `r.type` (should be `r.transactionType`) and `r.description` (should be `r.narration`). Also fixed `LEDGER_COLORS` key names to match actual `transactionType` enum values.
+
+**Files:**
+- `backend/src/controllers/admin/customers.controller.js` � added `.populate('order', 'orderNumber')` to `getPayments`
+- `frontend/src/pages/admin/Customers.jsx` � fmtDateTime helper; Ref # column in Ledger & Statement; Order # + datetime in Payments; topupNumber + type badge + datetime in Topups
+- `frontend/src/pages/admin/Suppliers.jsx` � fmtDateTime helper; fixed LEDGER_COLORS; fixed r.transactionType / r.narration field names; Ref # column in Ledger & Statement

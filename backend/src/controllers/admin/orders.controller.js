@@ -94,7 +94,6 @@ const createOrder = asyncHandler(async (req, res) => {
       lineItem.taxAmount = calcs.taxAmount;
       lineItem.lineTotal = calcs.lineTotal;
       orderItems.push(lineItem);
-      // NOTE: Stock is reserved when order status moves to 'shipped', not at placement.
     }
 
     // Calculate subtotal
@@ -149,10 +148,7 @@ const createOrder = asyncHandler(async (req, res) => {
     });
     await order.save({ session });
 
-    // NOTE: Ledger invoice is posted when order moves to 'processing' (confirmed), not at placement.
-    // Payment ledger entries are also only created when order is processing+.
-
-    // If payment made, record it (but no ledger entry yet)
+    // Save advance payment (ledger entry is posted when order moves to processing)
     if (amountPaid > 0) {
       const payment = new req.models.OrderPayment({
         order: order._id, customer: customer._id, amount: amountPaid,
@@ -160,8 +156,6 @@ const createOrder = asyncHandler(async (req, res) => {
         createdBy: req.user._id,
       });
       await payment.save({ session });
-
-      // NOTE: Payment ledger entry will be created when order moves to processing
     }
 
     return order;
@@ -208,8 +202,6 @@ const updateOrder = asyncHandler(async (req, res) => {
   // Items update
   if (items && Array.isArray(items) && items.length > 0) {
     await withTransaction(req.orgConn, async (session) => {
-      // NOTE: No stock reservation changes here — stock is only reserved at 'shipped' status.
-      // Build new line items
       const orderItems = [];
       for (const item of items) {
         const productId = item.productId || item.product;
@@ -326,13 +318,16 @@ const deleteOrder = asyncHandler(async (req, res) => {
       }
     }
     // Ledger credit note — only if the order was previously invoiced (processing+)
+    // Credit only the unreturned portion to avoid double-crediting already-returned amounts
     const wasInvoiced = !['placed'].includes(order.status);
-    if (wasInvoiced && order.grandTotal > 0) {
+    const creditableAmount = round2(order.grandTotal - (order.sellReturn || 0));
+    if (wasInvoiced && creditableAmount > 0) {
       await createCustomerLedgerEntry(req.models, {
         customerId: order.customer, transactionType: 'credit_note',
         referenceType: 'order', referenceId: order._id, referenceNumber: order.orderNumber,
-        debit: 0, credit: order.grandTotal, narration: `Order ${order.orderNumber} cancelled/deleted`,
+        debit: 0, credit: creditableAmount, narration: `Order ${order.orderNumber} cancelled/deleted`,
         userId: req.user._id,
+        idempotencyKey: `order:${order._id}:cancel`,
       }, session);
     }
     order.status = 'cancelled';
@@ -351,7 +346,7 @@ const updateStatus = asyncHandler(async (req, res) => {
   if (!orderCheck) throw new ApiError(404, 'Order not found');
 
   const validTransitions = {
-    placed: ['processing', 'shipped', 'cancelled'],
+    placed: ['processing', 'cancelled'],
     processing: ['shipped', 'cancelled'],
     shipped: ['in_transit', 'delivered', 'failed_delivery'],
     in_transit: ['out_for_delivery', 'delivered', 'failed_delivery'],
@@ -377,7 +372,7 @@ const updateStatus = asyncHandler(async (req, res) => {
       throw new ApiError(400, `Cannot transition from ${order.status} to ${status}`);
     }
 
-    // On PROCESSING: post sale invoice to customer ledger (order is now confirmed)
+    // On PROCESSING: post sale invoice + any pre-existing payments to customer ledger
     if (status === 'processing') {
       await createCustomerLedgerEntry(req.models, {
         customerId: order.customer, transactionType: 'invoice',
@@ -385,7 +380,22 @@ const updateStatus = asyncHandler(async (req, res) => {
         debit: order.grandTotal, credit: 0,
         narration: `Order ${order.orderNumber} — Sale invoice (confirmed)`,
         userId: req.user._id,
+        idempotencyKey: `order:${order._id}:invoice`,
       }, session);
+
+      // Post ledger entries for any payments recorded at order creation
+      const existingPayments = await req.models.OrderPayment.find({ order: order._id }).session(session);
+      for (const pmt of existingPayments) {
+        await createCustomerLedgerEntry(req.models, {
+          customerId: order.customer, transactionType: 'payment',
+          referenceType: 'payment', referenceId: pmt._id,
+          referenceNumber: order.orderNumber,
+          debit: 0, credit: pmt.amount,
+          narration: `Payment received — ${pmt.method || 'cash'} for ${order.orderNumber}`,
+          userId: req.user._id,
+          idempotencyKey: `payment:${pmt._id}:posted`,
+        }, session);
+      }
     }
 
     // On SHIPPED: reserve stock
@@ -421,12 +431,14 @@ const updateStatus = asyncHandler(async (req, res) => {
         }
       }
       const wasInvoiced = !['placed'].includes(order.status);
-      if (wasInvoiced && order.grandTotal > 0) {
+      const creditableAmount = round2(order.grandTotal - (order.sellReturn || 0));
+      if (wasInvoiced && creditableAmount > 0) {
         await createCustomerLedgerEntry(req.models, {
           customerId: order.customer, transactionType: 'credit_note',
           referenceType: 'order', referenceId: order._id, referenceNumber: order.orderNumber,
-          debit: 0, credit: order.grandTotal, narration: `Order ${order.orderNumber} cancelled`,
+          debit: 0, credit: creditableAmount, narration: `Order ${order.orderNumber} cancelled`,
           userId: req.user._id,
+          idempotencyKey: `order:${order._id}:cancel`,
         }, session);
       }
     }
@@ -470,6 +482,7 @@ const recordPayment = asyncHandler(async (req, res) => {
       debit: 0, credit: amount,
       narration: `Payment received — ${method || 'cash'} for ${order.orderNumber}`,
       userId: req.user._id,
+      idempotencyKey: `payment:${payment._id}:posted`,
     }, session);
     return payment;
   });
@@ -616,8 +629,9 @@ const approveReturn = asyncHandler(async (req, res) => {
       order.returnDue = round2(order.amountPaid - effectiveOwed);
     }
 
-    // Compute refund amount for this return (how much of returnDue is new from this approval)
-    returnDoc.refundAmount = order.returnDue;
+    // Compute refund amount for this specific return (the delta in returnDue caused by this approval)
+    const previousReturnDue = round2(Math.max(0, order.amountPaid - round2(order.grandTotal - (order.sellReturn - returnDoc.returnValue))));
+    returnDoc.refundAmount = round2(order.returnDue - previousReturnDue);
 
     // 4. Payment status
     if (order.balanceDue <= 0 && effectiveOwed <= 0) {
@@ -651,6 +665,7 @@ const approveReturn = asyncHandler(async (req, res) => {
         debit: 0, credit: returnDoc.returnValue,
         narration: `Return ${returnDoc.returnNumber} — goods credit ₹${returnDoc.returnValue.toFixed(2)} for ${order.orderNumber}${cashRefundNote}`,
         userId: req.user._id,
+        idempotencyKey: `return:${returnDoc._id}:credit_note`,
       }, session);
     }
 

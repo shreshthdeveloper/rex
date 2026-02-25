@@ -17,8 +17,6 @@ const customerTopupSchema = new mongoose.Schema(
     },
     reference: { type: String, default: '' },
     narration: { type: String, default: '' },
-    balanceBefore: { type: Number, required: true },
-    balanceAfter: { type: Number, required: true },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   },
   { timestamps: true }

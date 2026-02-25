@@ -29,6 +29,7 @@ const notificationSchema = require('./Notification');
 const counterSchema = require('./Counter');
 const ecomSettingsSchema = require('./EcomSettings');
 const brandSchema = require('./Brand');
+const transactionLogSchema = require('./TransactionLog');
 
 /**
  * Register all org-level models on a given connection.
@@ -74,6 +75,7 @@ const registerOrgModels = (connection) => {
   register('Notification', notificationSchema);
   register('Counter', counterSchema);
   register('EcomSettings', ecomSettingsSchema);
+  register('TransactionLog', transactionLogSchema);
 
   return models;
 };

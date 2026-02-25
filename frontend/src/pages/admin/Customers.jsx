@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useToast } from '../../context/ToastContext';
 import { PageHeader, Button, Modal, Input, Select, DataTable, Badge, ConfirmDialog, GlassCard, SearchInput, Loader, TabList, Textarea, CsvImport } from '../../components/ui';
 import { customersAPI } from '../../api';
-import { Plus, Edit, Trash2, Eye, UserCircle, Wallet, ArrowUpCircle, ArrowDownCircle, FileText, ShoppingCart, CreditCard, Receipt } from 'lucide-react';
+import { Plus, Edit, Trash2, Eye, UserCircle, Wallet, ArrowUpCircle, ArrowDownCircle, FileText, ShoppingCart, CreditCard, Receipt, RefreshCw } from 'lucide-react';
 
 const TIERS = [
   { value: 'retail', label: 'Retail' },
@@ -60,6 +60,17 @@ function fmtCurrency(v) {
 function fmtDate(d) {
   if (!d) return '-';
   return new Date(d).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+}
+
+function fmtDateTime(d) {
+  if (!d) return '-';
+  const date = new Date(d);
+  return (
+    <span>
+      <span className="block">{date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}</span>
+      <span className="block text-xs text-slate-400">{date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}</span>
+    </span>
+  );
 }
 
 export default function Customers() {
@@ -338,7 +349,8 @@ export default function Customers() {
 
   /* ───── DETAIL SUB-TABLE COLUMNS ───── */
   const ledgerColumns = [
-    { key: 'date', label: 'Date', render: (r) => fmtDate(r.date || r.createdAt) },
+    { key: 'date', label: 'Date', render: (r) => fmtDateTime(r.date || r.createdAt) },
+    { key: 'ref', label: 'Ref #', render: (r) => r.referenceNumber ? <span className="text-violet-600 font-mono text-xs">{r.referenceNumber}</span> : <span className="text-slate-400">—</span> },
     { key: 'type', label: 'Type', render: (r) => <Badge color={LEDGER_COLORS[r.transactionType] || 'gray'}>{r.transactionType}</Badge> },
     { key: 'description', label: 'Description', render: (r) => r.narration || '-' },
     { key: 'debit', label: 'Debit', render: (r) => r.debit ? <span className="text-red-400">{fmtCurrency(r.debit)}</span> : '-' },
@@ -347,9 +359,10 @@ export default function Customers() {
   ];
 
   const statementColumns = [
-    { key: 'date', label: 'Date', render: (r) => fmtDate(r.date || r.createdAt) },
+    { key: 'date', label: 'Date', render: (r) => fmtDateTime(r.date || r.createdAt) },
+    { key: 'ref', label: 'Ref #', render: (r) => r.referenceNumber ? <span className="text-violet-600 font-mono text-xs">{r.referenceNumber}</span> : <span className="text-slate-400">—</span> },
     { key: 'type', label: 'Type', render: (r) => <Badge color={LEDGER_COLORS[r.transactionType] || 'gray'}>{r.transactionType}</Badge> },
-    { key: 'description', label: 'Description', render: (r) => r.narration || r.referenceNumber || '-' },
+    { key: 'description', label: 'Description', render: (r) => r.narration || '-' },
     { key: 'debit', label: 'Debit', render: (r) => r.debit ? <span className="text-red-400">{fmtCurrency(r.debit)}</span> : '-' },
     { key: 'credit', label: 'Credit', render: (r) => r.credit ? <span className="text-emerald-400">{fmtCurrency(r.credit)}</span> : '-' },
     { key: 'balanceAfter', label: 'Balance', render: (r) => fmtCurrency(r.balanceAfter) },
@@ -363,18 +376,21 @@ export default function Customers() {
   ];
 
   const paymentsColumns = [
-    { key: 'date', label: 'Date', render: (r) => fmtDate(r.date || r.createdAt) },
-    { key: 'amount', label: 'Amount', render: (r) => <span className="text-emerald-400">{fmtCurrency(r.amount)}</span> },
-    { key: 'paymentMethod', label: 'Method', render: (r) => r.paymentMethod || '-' },
-    { key: 'reference', label: 'Reference', render: (r) => r.reference || '-' },
+    { key: 'date', label: 'Date', render: (r) => fmtDateTime(r.paymentDate || r.createdAt) },
+    { key: 'orderNumber', label: 'Order #', render: (r) => r.order?.orderNumber ? <span className="text-violet-600 font-mono text-xs">{r.order.orderNumber}</span> : <span className="text-slate-400">—</span> },
+    { key: 'amount', label: 'Amount', render: (r) => <span className="text-emerald-400 font-medium">{fmtCurrency(r.amount)}</span> },
+    { key: 'method', label: 'Method', render: (r) => r.method || r.paymentMethod || '-' },
+    { key: 'reference', label: 'Customer Ref', render: (r) => r.reference || '-' },
   ];
 
   const topupsColumns = [
-    { key: 'date', label: 'Date', render: (r) => fmtDate(r.date || r.createdAt) },
-    { key: 'amount', label: 'Amount', render: (r) => <span className="text-emerald-400">{fmtCurrency(r.amount)}</span> },
-    { key: 'paymentMethod', label: 'Method', render: (r) => r.paymentMethod || '-' },
-    { key: 'reference', label: 'Reference', render: (r) => r.reference || '-' },
-    { key: 'notes', label: 'Notes', render: (r) => r.notes || '-' },
+    { key: 'date', label: 'Date', render: (r) => fmtDateTime(r.createdAt) },
+    { key: 'topupNumber', label: 'Ref #', render: (r) => r.topupNumber ? <span className="text-violet-600 font-mono text-xs">{r.topupNumber}</span> : <span className="text-slate-400">—</span> },
+    { key: 'type', label: 'Type', render: (r) => <Badge color={r.type === 'topup' ? 'green' : r.type === 'debit_adjustment' ? 'red' : r.type === 'credit_adjustment' ? 'cyan' : 'amber'}>{r.type}</Badge> },
+    { key: 'amount', label: 'Amount', render: (r) => <span className="text-emerald-400 font-medium">{fmtCurrency(r.amount)}</span> },
+    { key: 'method', label: 'Method', render: (r) => r.method || '-' },
+    { key: 'reference', label: 'Ext. Ref', render: (r) => r.reference || '-' },
+    { key: 'notes', label: 'Narration', render: (r) => r.narration || '-' },
   ];
 
   /* ───── DETAIL TAB CONTENT ───── */
@@ -409,6 +425,20 @@ export default function Customers() {
             <p className="text-xs text-gray-500 text-center">
               Positive balance = customer owes us &nbsp;|&nbsp; Negative balance = advance / credit
             </p>
+            <div className="text-center">
+              <Button size="sm" variant="ghost" onClick={async () => {
+                try {
+                  const res = await customersAPI.reconcile(detailCustomer._id);
+                  const d = res.data || res;
+                  if (d.match) {
+                    toast.success('Balance is accurate — no drift detected');
+                  } else {
+                    toast.success(`Balance corrected: ₹${d.stored} → ₹${d.computed} (drift: ₹${d.diff})`);
+                    refreshLiveBalance(detailCustomer._id);
+                  }
+                } catch (err) { toast.error(err.message || 'Reconciliation failed'); }
+              }}><RefreshCw size={14} /> Reconcile Balance</Button>
+            </div>
           </div>
         );
 

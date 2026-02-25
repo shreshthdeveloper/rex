@@ -43,7 +43,7 @@ const create = asyncHandler(async (req, res) => {
       const topup = new req.models.CustomerTopup({
         topupNumber: topupNum, customer: customer._id, amount: openingBalance,
         type: 'opening_balance', method: 'other', narration: 'Opening balance',
-        balanceBefore: 0, balanceAfter: openingBalance, createdBy: req.user._id,
+        createdBy: req.user._id,
       });
       await topup.save({ session });
       await createCustomerLedgerEntry(req.models, {
@@ -51,6 +51,7 @@ const create = asyncHandler(async (req, res) => {
         referenceType: 'topup', referenceId: topup._id, referenceNumber: topupNum,
         debit: openingBalance, credit: 0, narration: 'Opening balance carried forward',
         userId: req.user._id,
+        idempotencyKey: `topup:${topup._id}:opening`,
       }, session);
     });
   }
@@ -116,13 +117,11 @@ const topup = asyncHandler(async (req, res) => {
     const customer = await req.models.Customer.findById(req.params.id).session(session);
     if (!customer) throw new ApiError(404, 'Customer not found');
     const topupNum = await getNextSequence(req.models, 'customer_topup', 'TOP-');
-    const balanceBefore = customer.currentBalance;
-    const balanceAfter = balanceBefore - amount; // Credit reduces balance
 
     const topupDoc = new req.models.CustomerTopup({
       topupNumber: topupNum, customer: customer._id, amount,
       type: 'topup', method: method || 'cash', reference: reference || '',
-      narration: narration || 'Balance top-up', balanceBefore, balanceAfter,
+      narration: narration || 'Balance top-up',
       createdBy: req.user._id,
     });
     await topupDoc.save({ session });
@@ -132,6 +131,7 @@ const topup = asyncHandler(async (req, res) => {
       referenceType: 'topup', referenceId: topupDoc._id, referenceNumber: topupNum,
       debit: 0, credit: amount, narration: narration || 'Cash top-up received from customer',
       userId: req.user._id,
+      idempotencyKey: `topup:${topupDoc._id}:topup`,
     }, session);
     return topupDoc;
   });
@@ -148,14 +148,12 @@ const adjust = asyncHandler(async (req, res) => {
     const customer = await req.models.Customer.findById(req.params.id).session(session);
     if (!customer) throw new ApiError(404, 'Customer not found');
     const topupNum = await getNextSequence(req.models, 'customer_topup', 'TOP-');
-    const balanceBefore = customer.currentBalance;
     const debit = type === 'debit_adjustment' ? amount : 0;
     const credit = type === 'credit_adjustment' ? amount : 0;
 
     const topupDoc = new req.models.CustomerTopup({
       topupNumber: topupNum, customer: customer._id, amount,
       type, method: 'other', narration: narration || `Manual ${type}`,
-      balanceBefore, balanceAfter: balanceBefore + debit - credit,
       createdBy: req.user._id,
     });
     await topupDoc.save({ session });
@@ -165,6 +163,7 @@ const adjust = asyncHandler(async (req, res) => {
       referenceType: 'manual', referenceId: topupDoc._id, referenceNumber: topupNum,
       debit, credit, narration: narration || `Manual ${type}`,
       userId: req.user._id,
+      idempotencyKey: `topup:${topupDoc._id}:adjustment`,
     }, session);
     return topupDoc;
   });
@@ -187,7 +186,8 @@ const getPayments = asyncHandler(async (req, res) => {
   const { skip, limit: lim, page: pg } = paginate(page, limit);
   const filter = { customer: req.params.id };
   const [payments, total] = await Promise.all([
-    req.models.OrderPayment.find(filter).sort({ createdAt: -1 }).skip(skip).limit(lim),
+    req.models.OrderPayment.find(filter).sort({ createdAt: -1 }).skip(skip).limit(lim)
+      .populate('order', 'orderNumber'),
     req.models.OrderPayment.countDocuments(filter),
   ]);
   res.json(new ApiResponse(200, { payments, pagination: paginationMeta(total, pg, lim) }));
@@ -211,8 +211,45 @@ const getStatement = asyncHandler(async (req, res) => {
   res.json(new ApiResponse(200, { customer, entries }));
 });
 
+/**
+ * Reconcile — compares stored balance to the sum of all ledger entries.
+ * Returns { match, storedBalance, computedBalance, difference, entryCount }
+ * If fix=true query param, corrects the stored balance to match the ledger sum.
+ */
+const reconcile = asyncHandler(async (req, res) => {
+  const customer = await req.models.Customer.findById(req.params.id);
+  if (!customer) throw new ApiError(404, 'Customer not found');
+
+  const agg = await req.models.CustomerLedger.aggregate([
+    { $match: { customer: customer._id } },
+    { $group: { _id: null, totalDebit: { $sum: '$debit' }, totalCredit: { $sum: '$credit' }, count: { $sum: 1 } } },
+  ]);
+  const { totalDebit = 0, totalCredit = 0, count = 0 } = agg[0] || {};
+  const computedBalance = Math.round((totalDebit - totalCredit) * 100) / 100;
+  const storedBalance = Math.round((customer.currentBalance || 0) * 100) / 100;
+  const difference = Math.round((storedBalance - computedBalance) * 100) / 100;
+  const match = Math.abs(difference) < 0.01;
+
+  if (req.query.fix === 'true' && !match) {
+    customer.currentBalance = computedBalance;
+    await customer.save();
+  }
+
+  res.json(new ApiResponse(200, {
+    customerId: customer._id,
+    name: customer.name,
+    storedBalance,
+    computedBalance,
+    difference,
+    match,
+    entryCount: count,
+    fixed: req.query.fix === 'true' && !match,
+  }));
+});
+
 module.exports = {
   list, create, getById, update, remove,
   getLedger, getBalance, topup, adjust,
   getOrders, getPayments, getTopups, getStatement,
+  reconcile,
 };

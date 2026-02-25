@@ -23,5 +23,6 @@ router.patch('/grn/:id/reject', managerPlus, ctrl.rejectGRN);
 // Purchase Returns
 router.get('/returns/list', managerPlus, ctrl.listPurchaseReturns);
 router.post('/returns', managerPlus, ctrl.createPurchaseReturn);
+router.patch('/returns/:returnId/approve', managerPlus, ctrl.approvePurchaseReturn);
 
 module.exports = router;

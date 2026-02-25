@@ -179,6 +179,7 @@ const approveGRN = asyncHandler(async (req, res) => {
         referenceType: 'grn', referenceId: grn._id, referenceNumber: grn.grnNumber,
         debit: grnTotal, credit: 0, narration: `GRN ${grn.grnNumber} approved - goods received`,
         userId: req.user._id,
+        idempotencyKey: `grn:${grn._id}:invoice`,
       }, session);
     }
 
@@ -236,37 +237,53 @@ const createPurchaseReturn = asyncHandler(async (req, res) => {
     const pr = new req.models.PurchaseReturn({
       returnNumber, purchaseOrder: req.body.purchaseOrder,
       supplier: req.body.supplier, warehouse: req.body.warehouse,
-      items: returnItems, totalValue, status: 'approved',
+      items: returnItems, totalValue, status: 'initiated',
       notes: req.body.notes || '', createdBy: req.user._id,
     });
     await pr.save({ session });
-
-    // Deduct stock
-    for (const item of returnItems) {
-      await updateStock(req.models, req.orgConn, {
-        productId: item.product, warehouseId: req.body.warehouse,
-        quantityChange: -item.returnQty, movementType: 'adjustment_out',
-        referenceType: 'return', referenceId: pr._id, referenceNumber: returnNumber,
-        notes: `Purchase return ${returnNumber}`, userId: req.user._id,
-      }, session);
-    }
-
-    // Credit supplier ledger (they owe us / reduces our payable)
-    if (totalValue > 0) {
-      await createSupplierLedgerEntry(req.models, {
-        supplierId: req.body.supplier, transactionType: 'credit_note',
-        referenceType: 'return', referenceId: pr._id, referenceNumber: returnNumber,
-        debit: 0, credit: totalValue, narration: `Purchase return ${returnNumber}`,
-        userId: req.user._id,
-      }, session);
-    }
     return pr;
   });
-  res.status(201).json(new ApiResponse(201, pr, 'Purchase return created – stock deducted, ledger updated'));
+  res.status(201).json(new ApiResponse(201, pr, 'Purchase return created (pending approval)'));
+});
+
+const approvePurchaseReturn = asyncHandler(async (req, res) => {
+  const { result: pr } = await withTransaction(req.orgConn, async (session) => {
+    const pr = await req.models.PurchaseReturn.findById(req.params.returnId).session(session);
+    if (!pr) throw new ApiError(404, 'Purchase return not found');
+    if (pr.status !== 'initiated') throw new ApiError(400, 'Only initiated returns can be approved');
+
+    // Deduct stock
+    for (const item of pr.items) {
+      await updateStock(req.models, req.orgConn, {
+        productId: item.product, warehouseId: pr.warehouse,
+        quantityChange: -item.returnQty, movementType: 'purchase_return_out',
+        referenceType: 'return', referenceId: pr._id, referenceNumber: pr.returnNumber,
+        notes: `Purchase return ${pr.returnNumber} approved`, userId: req.user._id,
+      }, session);
+    }
+
+    // Credit supplier ledger (reduces our payable to them)
+    if (pr.totalValue > 0) {
+      await createSupplierLedgerEntry(req.models, {
+        supplierId: pr.supplier, transactionType: 'credit_note',
+        referenceType: 'return', referenceId: pr._id, referenceNumber: pr.returnNumber,
+        debit: 0, credit: pr.totalValue, narration: `Purchase return ${pr.returnNumber} approved`,
+        userId: req.user._id,
+        idempotencyKey: `preturn:${pr._id}:credit_note`,
+      }, session);
+    }
+
+    pr.status = 'approved';
+    pr.approvedBy = req.user._id;
+    pr.approvedAt = new Date();
+    await pr.save({ session });
+    return pr;
+  });
+  res.json(new ApiResponse(200, pr, 'Purchase return approved – stock deducted, ledger updated'));
 });
 
 module.exports = {
   listPO, createPO, getPO, updatePO, deletePO, updatePOStatus,
   listGRN, createGRN, getGRN, approveGRN, rejectGRN,
-  listPurchaseReturns, createPurchaseReturn,
+  listPurchaseReturns, createPurchaseReturn, approvePurchaseReturn,
 };

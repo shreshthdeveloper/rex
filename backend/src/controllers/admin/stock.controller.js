@@ -74,29 +74,33 @@ const bulkCreateAdjustment = asyncHandler(async (req, res) => {
   if (!items || !items.length) throw new ApiError(400, 'items array is required');
   if (!['increase', 'decrease'].includes(adjustmentType)) throw new ApiError(400, 'Invalid adjustmentType');
 
-  const batchNumber = await getNextSequence(req.models, 'stock_adjustment_batch', 'ADJ-');
-  const batch = await req.models.AdjustmentBatch.create({
-    batchNumber,
-    warehouse: warehouseId,
-    adjustmentType,
-    reason,
-    notes: notes || '',
-    status: 'pending',
-    items: items
-      .filter((i) => i.productId && i.adjustedQuantity)
-      .map((i) => ({ product: i.productId, requestedQty: i.adjustedQuantity })),
-    createdBy: req.user._id,
-  });
+  const { result: batch } = await withTransaction(req.orgConn, async (session) => {
+    const batchNumber = await getNextSequence(req.models, 'stock_adjustment_batch', 'ADJ-');
+    const [batch] = await req.models.AdjustmentBatch.create([{
+      batchNumber,
+      warehouse: warehouseId,
+      adjustmentType,
+      reason,
+      notes: notes || '',
+      status: 'pending',
+      items: items
+        .filter((i) => i.productId && i.adjustedQuantity)
+        .map((i) => ({ product: i.productId, requestedQty: i.adjustedQuantity })),
+      createdBy: req.user._id,
+    }], { session });
 
-  // Reserve stock immediately for decrease adjustments (released on approve or cancel)
-  if (adjustmentType === 'decrease') {
-    for (const item of batch.items) {
-      await req.models.ProductStock.updateOne(
-        { product: item.product, warehouse: warehouseId },
-        { $inc: { reservedQuantity: Number(item.requestedQty) } }
-      );
+    // Reserve stock immediately for decrease adjustments (released on approve or cancel)
+    if (adjustmentType === 'decrease') {
+      for (const item of batch.items) {
+        await req.models.ProductStock.updateOne(
+          { product: item.product, warehouse: warehouseId },
+          { $inc: { reservedQuantity: Number(item.requestedQty) } },
+          { session }
+        );
+      }
     }
-  }
+    return batch;
+  });
 
   res.status(201).json(new ApiResponse(201, batch, 'Adjustment batch created (pending approval)'));
 });
@@ -237,19 +241,24 @@ const cancelAdjustmentBatch = asyncHandler(async (req, res) => {
 const createTransfer = asyncHandler(async (req, res) => {
   const { fromWarehouse, toWarehouse, items, notes } = req.body;
   if (fromWarehouse === toWarehouse) throw new ApiError(400, 'From and To warehouse must be different');
-  const transferNumber = await getNextSequence(req.models, 'stock_transfer', 'TRF-');
-  const transfer = await req.models.StockTransfer.create({
-    transferNumber, fromWarehouse, toWarehouse,
-    items: items.map((i) => ({ product: i.productId || i.product, requestedQty: i.requestedQty || i.quantity, notes: i.notes || '' })),
-    notes: notes || '', createdBy: req.user._id, status: 'in_transit',
+
+  const { result: transfer } = await withTransaction(req.orgConn, async (session) => {
+    const transferNumber = await getNextSequence(req.models, 'stock_transfer', 'TRF-');
+    const [transfer] = await req.models.StockTransfer.create([{
+      transferNumber, fromWarehouse, toWarehouse,
+      items: items.map((i) => ({ product: i.productId || i.product, requestedQty: i.requestedQty || i.quantity, notes: i.notes || '' })),
+      notes: notes || '', createdBy: req.user._id, status: 'in_transit',
+    }], { session });
+    // Reserve stock at source warehouse for each item
+    for (const item of transfer.items) {
+      await req.models.ProductStock.updateOne(
+        { product: item.product, warehouse: fromWarehouse },
+        { $inc: { reservedQuantity: Number(item.requestedQty) } },
+        { session }
+      );
+    }
+    return transfer;
   });
-  // Reserve stock at source warehouse for each item
-  for (const item of transfer.items) {
-    await req.models.ProductStock.updateOne(
-      { product: item.product, warehouse: fromWarehouse },
-      { $inc: { reservedQuantity: Number(item.requestedQty) } }
-    );
-  }
   res.status(201).json(new ApiResponse(201, transfer, 'Stock transfer created'));
 });
 
