@@ -723,7 +723,7 @@ export default function StockManagement() {
 
   // ─── Bulk opening stock states ───
   const [bulkWhId, setBulkWhId] = useState('');
-  // Items use product object from ProductSearch: { product: {_id, name, sku, ...}, quantity: '', warehousePrice: '' }
+  // Items use product object from ProductSearch: { product: {_id, name, sku, ...}, quantity: '', supplierPrice: '' }
   const [bulkWhItems, setBulkWhItems] = useState([]);
   const [savingBulk, setSavingBulk] = useState(false);
 
@@ -739,7 +739,7 @@ export default function StockManagement() {
       }
       return [
         ...prev,
-        ...incoming.map(s => ({ product: s.product, quantity: '', warehousePrice: '' })),
+        ...incoming.map(s => ({ product: s.product, quantity: '', supplierPrice: '' })),
       ];
     });
   };
@@ -756,7 +756,7 @@ export default function StockManagement() {
       setSavingBulk(true);
       const res = await stockAPI.bulkOpeningByWarehouse({
         warehouseId: bulkWhId,
-        items: validItems.map(i => ({ productId: i.product._id, quantity: Number(i.quantity), warehousePrice: i.warehousePrice ? Number(i.warehousePrice) : undefined })),
+        items: validItems.map(i => ({ productId: i.product._id, quantity: Number(i.quantity), supplierPrice: i.supplierPrice ? Number(i.supplierPrice) : undefined })),
       });
       const data = res.data;
       toast.success(`${data?.success?.length || 0} set, ${data?.skipped?.length || 0} skipped`);
@@ -773,7 +773,7 @@ export default function StockManagement() {
         <h3 className="text-lg font-semibold text-slate-800 mb-1 flex items-center gap-2">
           <Layers size={20} className="text-violet-600" /> Set Opening Stock
         </h3>
-        <p className="text-xs text-slate-500 mb-4">Select a warehouse, search for products, then fill in quantity and cost price before saving.</p>
+        <p className="text-xs text-slate-500 mb-4">Select a warehouse, search for products, then fill in quantity and supplier price before saving.</p>
         <p className="text-xs text-amber-600 mb-4">Note: Opening stock can only be set once per SKU per warehouse. Duplicate entries will be skipped.</p>
         <form onSubmit={handleBulkByWarehouse} className="space-y-4">
           <div className="max-w-xs">
@@ -791,7 +791,7 @@ export default function StockManagement() {
                   <tr className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                     <th className="py-2.5 px-3 text-left">Product</th>
                     <th className="py-2.5 px-3 text-center w-32">Quantity *</th>
-                    <th className="py-2.5 px-3 text-center w-36">Cost Price</th>
+                    <th className="py-2.5 px-3 text-center w-36">Supplier Price</th>
                     <th className="py-2.5 px-3 w-10"></th>
                   </tr>
                 </thead>
@@ -819,8 +819,8 @@ export default function StockManagement() {
                         <input
                           type="number" min="0" step="0.01"
                           className="w-full text-center border border-gray-200 rounded px-2 py-1.5 text-sm text-slate-900 focus:outline-none focus:ring-1 focus:ring-violet-400"
-                          value={item.warehousePrice}
-                          onChange={(e) => updateBulkWhItem(idx, 'warehousePrice', e.target.value)}
+                          value={item.supplierPrice}
+                          onChange={(e) => updateBulkWhItem(idx, 'supplierPrice', e.target.value)}
                           placeholder="Optional"
                         />
                       </td>

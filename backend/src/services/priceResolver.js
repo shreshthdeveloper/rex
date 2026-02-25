@@ -2,7 +2,7 @@
  * 4-Tier Price Resolution Service
  *
  * Tier 1 (Highest): Customer tier price from customer_tier_prices
- * Tier 2: Warehouse price from product_stocks.warehousePrice
+ * Tier 2: Warehouse supplier price from product_stocks.supplierPrice
  * Tier 3: SKU base price from products.basePrice
  * Tier 4 (Fallback): Parent product base price
  *
@@ -36,8 +36,9 @@ const resolvePrice = async (models, { productId, warehouseId, customerId, qty = 
   // Tier 2: Warehouse price
   if (warehouseId) {
     const stock = await ProductStock.findOne({ product: productId, warehouse: warehouseId });
-    if (stock && stock.warehousePrice != null) {
-      return { price: stock.warehousePrice, tier: 'warehouse' };
+    const warehouseSupplierPrice = stock?.supplierPrice;
+    if (warehouseSupplierPrice != null) {
+      return { price: warehouseSupplierPrice, tier: 'warehouse' };
     }
   }
 

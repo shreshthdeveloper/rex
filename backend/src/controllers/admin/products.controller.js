@@ -202,11 +202,13 @@ const getProductStock = asyncHandler(async (req, res) => {
 const stockSummary = asyncHandler(async (req, res) => {
   const stocks = await req.models.ProductStock.find()
     .populate('warehouse', 'name code')
+    .populate({ path: 'product', select: 'type parentProduct name' })
     .lean();
 
   const summary = {};
   for (const s of stocks) {
-    const pid = s.product.toString();
+    if (!s.product) continue;
+    const pid = s.product._id.toString();
     if (!summary[pid]) summary[pid] = { total: 0, warehouses: [] };
     const qty = s.quantity ?? 0;
     const reserved = s.reserved ?? 0;
@@ -218,6 +220,13 @@ const stockSummary = asyncHandler(async (req, res) => {
       quantity: qty,
       reserved,
     });
+
+    // Aggregate variant stock under its parent product too (for parent badge display)
+    if (s.product.type === 'variant' && s.product.parentProduct) {
+      const parentId = s.product.parentProduct.toString();
+      if (!summary[parentId]) summary[parentId] = { total: 0, warehouses: [] };
+      summary[parentId].total += qty;
+    }
   }
 
   res.json(new ApiResponse(200, summary));

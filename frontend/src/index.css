@@ -246,6 +246,7 @@ body {
     }
 
     .glass-modal-overlay {
+       
         background: rgba(15, 10, 40, 0.45);
         backdrop-filter: blur(6px);
         -webkit-backdrop-filter: blur(6px);

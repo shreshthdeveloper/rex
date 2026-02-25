@@ -1,5 +1,6 @@
 /* Reusable UI components – White & Violet Theme */
 import { useState, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { X, ChevronLeft, ChevronRight, Search, Loader2, Upload, Download } from 'lucide-react';
 
 /* ─── Glass Card ─── */
@@ -109,11 +110,12 @@ export function Badge({ children, color = 'cyan', className = '' }) {
 /* ─── Modal ─── */
 export function Modal({ open, onClose, title, children, size = 'md', footer }) {
   if (!open) return null;
-  const sizes = { sm: 'max-w-md', md: 'max-w-lg', lg: 'max-w-2xl', xl: 'max-w-4xl', '2xl': 'max-w-5xl', full: 'max-w-6xl' };
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 glass-modal-overlay animate-fade-in" onClick={onClose}>
+  const sizes = { sm: 'max-w-md', md: 'max-w-lg', lg: 'max-w-2xl', xl: 'max-w-4xl', '2xl': 'max-w-5xl', full: 'max-w-6xl', wide: 'w-[80vw] max-w-[80vw]', view: 'w-[70vw] max-w-[70vw]' };
+  const maxHeights = { view: 'max-h-[80vh]' };
+  return createPortal(
+    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 glass-modal-overlay animate-fade-in" onClick={onClose}>
       <div
-        className={`w-full ${sizes[size]} glass-modal animate-slide-up max-h-[90vh] flex flex-col`}
+        className={`w-full ${sizes[size]} glass-modal animate-slide-up ${maxHeights[size] || 'max-h-[90vh]'} flex flex-col`}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -132,7 +134,8 @@ export function Modal({ open, onClose, title, children, size = 'md', footer }) {
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -286,15 +289,16 @@ export function PageHeader({ title, subtitle, actions }) {
 }
 
 /* ─── DataTable ─── */
-export function DataTable({ columns, data = [], loading, onRowClick, emptyMessage = 'No records found' }) {
+export function DataTable({ columns, data = [], loading, onRowClick, emptyMessage = 'No records found', scrollable = false }) {
+  const tableMinW = scrollable ? 'min-w-[1100px]' : 'w-full';
   if (loading) {
     return (
       <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
-        <table className="w-full glass-table">
+        <table className={`${tableMinW} glass-table`}>
           <thead>
             <tr>
               {columns.map((col) => (
-                <th key={col.key} className="px-4 py-3 text-left">{col.label}</th>
+                <th key={col.key} className="px-5 py-3 text-left">{col.label}</th>
               ))}
             </tr>
           </thead>
@@ -302,7 +306,7 @@ export function DataTable({ columns, data = [], loading, onRowClick, emptyMessag
             {[...Array(5)].map((_, i) => (
               <tr key={i} className="border-b border-gray-100">
                 {columns.map((col, j) => (
-                  <td key={col.key} className="px-4 py-4">
+                  <td key={col.key} className="px-5 py-4">
                     <div
                       className="h-3.5 skeleton-shimmer"
                       style={{ width: `${[72, 55, 65, 50, 80, 60, 70][j % 7]}%` }}
@@ -319,11 +323,11 @@ export function DataTable({ columns, data = [], loading, onRowClick, emptyMessag
   if (!data.length) return <EmptyState title={emptyMessage} />;
   return (
     <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
-      <table className="w-full glass-table">
+      <table className={`${tableMinW} glass-table`}>
         <thead>
           <tr>
             {columns.map((col) => (
-              <th key={col.key} className="px-4 py-3 text-left" style={col.width ? { width: col.width } : {}}>
+              <th key={col.key} className={`px-5 py-3 text-left${scrollable ? ' whitespace-nowrap' : ''}`} style={col.width ? { width: col.width } : {}}>
                 {col.label}
               </th>
             ))}
@@ -337,7 +341,7 @@ export function DataTable({ columns, data = [], loading, onRowClick, emptyMessag
               onClick={() => onRowClick?.(row)}
             >
               {columns.map((col) => (
-                <td key={col.key} className="px-4 py-3 text-sm text-slate-700">
+                <td key={col.key} className={`px-5 py-3 text-sm text-slate-700${scrollable ? ' whitespace-nowrap' : ''}`}>
                   {col.render ? col.render(row) : row[col.key]}
                 </td>
               ))}

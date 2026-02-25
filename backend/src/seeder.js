@@ -546,7 +546,7 @@ async function seed() {
         existing = await m.ProductStock.create({
           product: prod._id, warehouse: wh._id,
           quantity: qty, reservedQuantity: 0,
-          warehousePrice: i === 0 ? null : Math.round(prod.basePrice * (1 + (i * 0.05)) * 100) / 100,
+          supplierPrice: i === 0 ? null : Math.round(prod.basePrice * (1 + (i * 0.05)) * 100) / 100,
           lowStockThreshold: 10,
         });
       }

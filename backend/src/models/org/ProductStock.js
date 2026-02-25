@@ -6,7 +6,7 @@ const productStockSchema = new mongoose.Schema(
     warehouse: { type: mongoose.Schema.Types.ObjectId, ref: 'Warehouse', required: true },
     quantity: { type: Number, default: 0 },
     reservedQuantity: { type: Number, default: 0 },
-    warehousePrice: { type: Number, default: null },
+    supplierPrice: { type: Number, default: null },
     lowStockThreshold: { type: Number, default: 10 },
   },
   { timestamps: true }

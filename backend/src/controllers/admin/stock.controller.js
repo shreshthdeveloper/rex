@@ -32,7 +32,7 @@ const listAllStock = asyncHandler(async (req, res) => {
 });
 
 const setOpeningStock = asyncHandler(async (req, res) => {
-  const { productId, warehouseId, quantity, warehousePrice } = req.body;
+  const { productId, warehouseId, quantity, supplierPrice } = req.body;
 
   // Opening stock is a one-time activity — block if any stock movement already exists
   const existingMovement = await req.models.StockMovement.findOne({ product: productId, warehouse: warehouseId });
@@ -47,7 +47,7 @@ const setOpeningStock = asyncHandler(async (req, res) => {
       stock = new req.models.ProductStock({ product: productId, warehouse: warehouseId, quantity: 0, reservedQuantity: 0 });
     }
     stock.quantity = quantity;
-    if (warehousePrice !== undefined) stock.warehousePrice = warehousePrice;
+    if (supplierPrice !== undefined) stock.supplierPrice = supplierPrice;
     await stock.save({ session });
 
     const movement = new req.models.StockMovement({
@@ -422,7 +422,7 @@ const lowStock = asyncHandler(async (req, res) => {
 /**
  * Bulk opening stock by warehouse — select a warehouse and set opening stock for multiple SKUs at once
  * POST /admin/stock/opening/bulk-by-warehouse
- * Body: { warehouseId, items: [{ productId, quantity, warehousePrice? }] }
+ * Body: { warehouseId, items: [{ productId, quantity, supplierPrice? }] }
  */
 const bulkOpeningByWarehouse = asyncHandler(async (req, res) => {
   const { warehouseId, items } = req.body;
@@ -432,7 +432,7 @@ const bulkOpeningByWarehouse = asyncHandler(async (req, res) => {
   const results = { success: [], skipped: [] };
 
   for (const item of items) {
-    const { productId, quantity, warehousePrice } = item;
+    const { productId, quantity, supplierPrice } = item;
     if (!productId || quantity === undefined) { results.skipped.push({ productId, reason: 'Missing productId or quantity' }); continue; }
 
     // Check if already has stock history
@@ -449,7 +449,7 @@ const bulkOpeningByWarehouse = asyncHandler(async (req, res) => {
       }
       const qtyBefore = stock.quantity;
       stock.quantity = quantity;
-      if (warehousePrice !== undefined) stock.warehousePrice = warehousePrice;
+      if (supplierPrice !== undefined) stock.supplierPrice = supplierPrice;
       await stock.save({ session });
 
       const movement = new req.models.StockMovement({
