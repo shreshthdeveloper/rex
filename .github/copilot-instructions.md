@@ -9,7 +9,7 @@ This is a full-stack e-commerce management system with:
 **After every task or feature is completed, add an entry to [`TASKS.md`](../TASKS.md) at the project root.**
 
 Each entry should include:
-- Date (YYYY-MM-DD) & Timestamp
+- Date (YYYY-MM-DD) & Time (24 hr format)
 - Short description of what was done
 - Files changed
 

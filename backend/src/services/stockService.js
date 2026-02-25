@@ -59,7 +59,7 @@ const updateStock = async (models, connection, {
 };
 
 /**
- * Reserve stock (on order placed)
+ * Reserve stock (when order enters shipped flow)
  */
 const reserveStock = async (models, productId, warehouseId, qty, session) => {
   const stock = await models.ProductStock.findOne({
@@ -67,7 +67,7 @@ const reserveStock = async (models, productId, warehouseId, qty, session) => {
     warehouse: warehouseId,
   }).session(session);
 
-  if (!stock) throw new ApiError(400, 'No stock record found');
+  if (!stock) throw new ApiError(400, 'No stock record found for this product in the selected warehouse. Please set opening stock first.');
   const available = stock.quantity - stock.reservedQuantity;
   if (available < qty) {
     throw new ApiError(400, `Insufficient available stock. Available: ${available}, Requested: ${qty}`);
@@ -78,7 +78,7 @@ const reserveStock = async (models, productId, warehouseId, qty, session) => {
 };
 
 /**
- * Release reserved stock (on order cancel)
+ * Release reserved stock (on cancel/failure before delivery)
  */
 const releaseReserved = async (models, productId, warehouseId, qty, session) => {
   const stock = await models.ProductStock.findOne({
@@ -92,7 +92,8 @@ const releaseReserved = async (models, productId, warehouseId, qty, session) => 
 };
 
 /**
- * Deduct stock on shipment (quantity-- and reservedQuantity--)
+ * Deduct stock from inventory when the shipment is completed (delivery)
+ * (quantity-- and reservedQuantity--)
  */
 const deductOnShipment = async (models, connection, {
   productId, warehouseId, qty, orderId, orderNumber, userId,
@@ -101,7 +102,7 @@ const deductOnShipment = async (models, connection, {
     product: productId,
     warehouse: warehouseId,
   }).session(session);
-  if (!stock) throw new ApiError(400, 'No stock record found');
+  if (!stock) throw new ApiError(400, 'No stock record found for this product in the selected warehouse.');
 
   const quantityBefore = stock.quantity;
   stock.quantity -= qty;
@@ -125,4 +126,62 @@ const deductOnShipment = async (models, connection, {
   return stock;
 };
 
-module.exports = { updateStock, reserveStock, releaseReserved, deductOnShipment };
+/**
+ * Receive return stock (pending return): items are physically back but quarantined.
+ * Increments both quantity and reservedQuantity so net available stays the same.
+ */
+const receiveReturnStock = async (models, connection, {
+  productId, warehouseId, qty, returnId, returnNumber, userId,
+}, session) => {
+  const stock = await models.ProductStock.findOne({
+    product: productId, warehouse: warehouseId,
+  }).session(session);
+  if (!stock) throw new ApiError(400, 'No stock record found for this product in the selected warehouse.');
+
+  const quantityBefore = stock.quantity;
+  stock.quantity += qty;
+  stock.reservedQuantity += qty;
+  await stock.save({ session });
+
+  const movement = new models.StockMovement({
+    product: productId, warehouse: warehouseId,
+    movementType: 'return_in_pending',
+    quantityBefore, quantityChange: qty, quantityAfter: stock.quantity,
+    referenceType: 'return', referenceId: returnId,
+    referenceNumber: returnNumber,
+    notes: `Pending return received — quarantined`,
+    createdBy: userId,
+  });
+  await movement.save({ session });
+  return stock;
+};
+
+/**
+ * Release return stock (approved return): items cleared for sale.
+ * Decrements reservedQuantity so available increases.
+ */
+const releaseReturnStock = async (models, connection, {
+  productId, warehouseId, qty, returnId, returnNumber, userId,
+}, session) => {
+  const stock = await models.ProductStock.findOne({
+    product: productId, warehouse: warehouseId,
+  }).session(session);
+  if (!stock) throw new ApiError(400, 'No stock record found for this product in the selected warehouse.');
+
+  stock.reservedQuantity = Math.max(0, stock.reservedQuantity - qty);
+  await stock.save({ session });
+
+  const movement = new models.StockMovement({
+    product: productId, warehouse: warehouseId,
+    movementType: 'return_in_approved',
+    quantityBefore: stock.quantity, quantityChange: 0, quantityAfter: stock.quantity,
+    referenceType: 'return', referenceId: returnId,
+    referenceNumber: returnNumber,
+    notes: `Return approved — stock released to available`,
+    createdBy: userId,
+  });
+  await movement.save({ session });
+  return stock;
+};
+
+module.exports = { updateStock, reserveStock, releaseReserved, deductOnShipment, receiveReturnStock, releaseReturnStock };

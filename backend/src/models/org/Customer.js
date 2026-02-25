@@ -46,7 +46,6 @@ const customerSchema = new mongoose.Schema(
 );
 
 customerSchema.plugin(softDeletePlugin);
-customerSchema.index({ email: 1 });
 customerSchema.index({ phone: 1 });
 
 module.exports = customerSchema;

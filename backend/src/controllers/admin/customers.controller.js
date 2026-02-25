@@ -93,7 +93,7 @@ const getLedger = asyncHandler(async (req, res) => {
   const { skip, limit: lim, page: pg } = paginate(page, limit);
   const filter = { customer: req.params.id };
   const [entries, total] = await Promise.all([
-    req.models.CustomerLedger.find(filter).sort({ createdAt: 1 }).skip(skip).limit(lim),
+    req.models.CustomerLedger.find(filter).sort({ createdAt: -1 }).skip(skip).limit(lim),
     req.models.CustomerLedger.countDocuments(filter),
   ]);
   res.json(new ApiResponse(200, { entries, pagination: paginationMeta(total, pg, lim) }));

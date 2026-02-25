@@ -1,10 +1,11 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useToast } from '../../context/ToastContext';
 import { useTabs } from '../../context/TabContext';
 import { PageHeader, Button, Modal, Input, Select, DataTable, Badge, ConfirmDialog, GlassCard, SearchInput, Loader, TabList, Textarea, CsvImport, SearchableSelect } from '../../components/ui';
 import { ordersAPI, customersAPI, productsAPI, warehousesAPI } from '../../api';
-import { Plus, Edit, Trash2, Eye, ShoppingCart, CreditCard, RotateCcw, FileText, Clock, Zap, Printer, Search, Package } from 'lucide-react';
+import { Plus, Edit, Trash2, Eye, ShoppingCart, CreditCard, RotateCcw, FileText, Clock, Zap, Printer, Truck, CheckCircle } from 'lucide-react';
 import POS from './POS';
+import ProductSearch from '../../components/ProductSearch';
 
 const STATUS_OPTS = [
   { value: 'placed', label: 'Placed' },
@@ -38,8 +39,6 @@ const PAY_METHODS = [
 
 const DETAIL_TABS = [
   { id: 'details', label: 'Details' },
-  { id: 'status', label: 'Status' },
-  { id: 'payments', label: 'Payments' },
   { id: 'returns', label: 'Returns' },
   { id: 'invoice', label: 'Invoice' },
   { id: 'history', label: 'History' },
@@ -96,8 +95,12 @@ export default function Orders() {
   const [detailTab, setDetailTab] = useState('details');
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailData, setDetailData] = useState(null);
-  const [detailPayments, setDetailPayments] = useState([]);
-  const [detailReturns, setDetailReturns] = useState([]);
+
+  // Standalone status action modal
+  const [statusModal, setStatusModal] = useState(null);
+  // Standalone payments modal
+  const [paymentModal, setPaymentModal] = useState(null); // { order, payments }
+  const [paymentModalLoading, setPaymentModalLoading] = useState(false);
 
   // Payment form
   const [payForm, setPayForm] = useState(emptyPayment);
@@ -106,19 +109,13 @@ export default function Orders() {
   // Return form
   const [returnForm, setReturnForm] = useState(emptyReturn);
   const [returnSaving, setReturnSaving] = useState(false);
+  // Refund method selection per pending return row { [returnId]: method }
+  const [refundMethodMap, setRefundMethodMap] = useState({});
 
-  // Stock validation cache: { productId: { warehouseId: qty } }
+  // Stock validation cache: { productId: { warehouseId: { total, reserved, available } } }
   const [stockCache, setStockCache] = useState({});
 
-  // Product search (for items editor)
-  const [orderProductSearch, setOrderProductSearch] = useState('');
-  const [orderSearchResults, setOrderSearchResults] = useState([]);
-  const [orderSearching, setOrderSearching] = useState(false);
-  const orderSearchTimeout = useRef(null);
-
-  // Variant selection modal (for items editor)
-  const [orderVariantModal, setOrderVariantModal] = useState(null);
-  const [orderSelectedVariants, setOrderSelectedVariants] = useState({});
+  // (Product search and variant modal are handled by <ProductSearch> component)
 
   const checkStock = async (productId) => {
     if (!productId || stockCache[productId]) return;
@@ -128,7 +125,13 @@ export default function Orders() {
       const byWarehouse = {};
       stocks.forEach((s) => {
         const wId = String(s.warehouse?._id || s.warehouse || '');
-        byWarehouse[wId] = s.quantity ?? 0;
+        const total = Number(s.quantity ?? 0);
+        const reserved = Number(s.reservedQuantity ?? s.reserved ?? 0);
+        byWarehouse[wId] = {
+          total,
+          reserved,
+          available: total - reserved,
+        };
       });
       setStockCache((prev) => ({ ...prev, [productId]: byWarehouse }));
     } catch { /* silent */ }
@@ -151,44 +154,11 @@ export default function Orders() {
     load();
   }, []);
 
-  // Debounced product search for items editor
-  useEffect(() => {
-    if (orderSearchTimeout.current) clearTimeout(orderSearchTimeout.current);
-    if (!orderProductSearch.trim()) { setOrderSearchResults([]); return; }
-    orderSearchTimeout.current = setTimeout(async () => {
-      try {
-        setOrderSearching(true);
-        const res = await productsAPI.list({ search: orderProductSearch, limit: 20 });
-        setOrderSearchResults(res.data?.products || []);
-      } catch { /* silent */ }
-      finally { setOrderSearching(false); }
-    }, 300);
-    return () => clearTimeout(orderSearchTimeout.current);
-  }, [orderProductSearch]);
-
-  // Handle clicking a product from order search results
-  const handleOrderProductClick = async (product) => {
-    if (product.type === 'parent') {
-      try {
-        const res = await productsAPI.get(product._id);
-        const detail = res.data;
-        const vars = detail?.variants || [];
-        const stks = detail?.stocks || [];
-        if (vars.length === 0) {
-          toast.error('This parent product has no variants');
-          return;
-        }
-        setOrderVariantModal({ product, variants: vars, stocks: stks });
-        setOrderSelectedVariants({});
-      } catch {
-        toast.error('Failed to load variants');
-      }
-    } else {
-      addOrderItem(product);
-    }
-    setOrderProductSearch('');
-    setOrderSearchResults([]);
-  };
+  // onSelect callback for <ProductSearch> in the items editor
+  const handleProductSearchSelect = useCallback((items) => {
+    items.forEach(({ product }) => addOrderItem(product));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Add item to order form
   const addOrderItem = (product) => {
@@ -217,17 +187,7 @@ export default function Orders() {
     if (product._id) checkStock(product._id);
   };
 
-  // Add selected variants from order variant modal
-  const handleOrderAddVariants = () => {
-    const selected = Object.entries(orderSelectedVariants).filter(([, v]) => v);
-    if (!selected.length) return toast.error('Select at least one variant');
-    for (const [variantId] of selected) {
-      const variant = orderVariantModal.variants.find(v => v._id === variantId);
-      if (variant) addOrderItem(variant);
-    }
-    setOrderVariantModal(null);
-    setOrderSelectedVariants({});
-  };
+
 
   /* ───── FETCH LIST ───── */
   const fetchOrders = useCallback(async () => {
@@ -355,15 +315,13 @@ export default function Orders() {
     try {
       const res = await ordersAPI.get(o._id);
       setDetailOrder(res.data?.order || o);
-      setDetailPayments(res.data?.payments || []);
-      setDetailReturns(res.data?.returns || []);
     } catch { setDetailOrder(o); }
     setDetailTab('details');
     setPayForm(emptyPayment);
     setReturnForm({ items: [{ lineItem: '', returnQty: 1, reason: '' }] });
     setDetailData(null);
   };
-  const closeDetail = () => { setDetailOrder(null); setDetailData(null); setDetailPayments([]); setDetailReturns([]); };
+  const closeDetail = () => { setDetailOrder(null); setDetailData(null); };
 
   const fetchDetailTab = useCallback(async (tab, order) => {
     const o = order || detailOrder;
@@ -373,7 +331,6 @@ export default function Orders() {
     try {
       let res;
       switch (tab) {
-        case 'payments': res = await ordersAPI.listPayments(o._id); setDetailData(res.data || []); break;
         case 'returns':  res = await ordersAPI.listReturns(o._id);  setDetailData(res.data || []); break;
         case 'invoice':  res = await ordersAPI.getInvoice(o._id);   setDetailData(res.data || res); break;
         case 'history':  res = await ordersAPI.getHistory(o._id);   setDetailData(res.data || []); break;
@@ -385,35 +342,74 @@ export default function Orders() {
 
   const switchDetailTab = (tab) => {
     setDetailTab(tab);
-    if (['payments', 'returns', 'invoice', 'history'].includes(tab)) fetchDetailTab(tab);
+    if (['returns', 'invoice', 'history'].includes(tab)) fetchDetailTab(tab);
   };
 
-  /* ───── STATUS UPDATE ───── */
-  const handleStatus = async (newStatus) => {
+  /* ───── STATUS MODAL (standalone from list) ───── */
+  const openStatusModal = async (o) => {
     try {
-      await ordersAPI.updateStatus(detailOrder._id, { status: newStatus });
+      const res = await ordersAPI.get(o._id);
+      setStatusModal(res.data?.order || o);
+    } catch {
+      setStatusModal(o);
+    }
+  };
+  const handleStatusModalAction = async (newStatus) => {
+    try {
+      await ordersAPI.updateStatus(statusModal._id, { status: newStatus });
       toast.success(`Order ${newStatus}`);
-      const res = await ordersAPI.get(detailOrder._id);
-      setDetailOrder(res.data?.order);
-      setDetailPayments(res.data?.payments || []);
-      setDetailReturns(res.data?.returns || []);
+      setStatusModal(null);
       fetchOrders();
+      // Invalidate stockCache for all products in this order so Available Qty reflects new reserved counts
+      const orderForCache = statusModal;
+      if (orderForCache?.items?.length) {
+        setStockCache((prev) => {
+          const next = { ...prev };
+          orderForCache.items.forEach((item) => {
+            const pid = item.product?._id || item.product;
+            if (pid) delete next[String(pid)];
+          });
+          return next;
+        });
+      }
+      // If the same order is open in the detail modal, refresh it too
+      if (detailOrder?._id === statusModal._id) {
+        const res = await ordersAPI.get(statusModal._id);
+        setDetailOrder(res.data?.order);
+      }
     } catch (err) { toast.error(err.message || 'Failed to update status'); }
   };
 
-  /* ───── PAYMENT ───── */
-  const handleRecordPayment = async () => {
+  /* ───── PAYMENTS MODAL (standalone from list) ───── */
+  const openPaymentModal = async (o) => {
+    setPaymentModalLoading(true);
+    setPayForm(emptyPayment);
+    try {
+      const [orderRes, payRes] = await Promise.all([ordersAPI.get(o._id), ordersAPI.listPayments(o._id)]);
+      setPaymentModal({ order: orderRes.data?.order || o, payments: payRes.data || [] });
+    } catch {
+      setPaymentModal({ order: o, payments: [] });
+    } finally {
+      setPaymentModalLoading(false);
+    }
+  };
+  const handlePaymentModalRecord = async () => {
     if (!payForm.amount || Number(payForm.amount) <= 0) return toast.error('Valid amount is required');
+    const due = paymentModal?.order?.balanceDue || 0;
+    if (Number(payForm.amount) > due + 0.001) return toast.error(`Amount cannot exceed balance due \u20b9${fmtCurrency(due)}`);
     try {
       setPayingSaving(true);
-      await ordersAPI.recordPayment(detailOrder._id, { amount: Number(payForm.amount), method: payForm.method, reference: payForm.reference, notes: payForm.notes });
+      await ordersAPI.recordPayment(paymentModal.order._id, { amount: Number(payForm.amount), method: payForm.method, reference: payForm.reference, notes: payForm.notes });
       toast.success('Payment recorded');
       setPayForm(emptyPayment);
-      const res = await ordersAPI.get(detailOrder._id);
-      setDetailOrder(res.data?.order);
-      setDetailPayments(res.data?.payments || []);
-      setDetailReturns(res.data?.returns || []);
-      fetchDetailTab('payments');
+      const [orderRes, payRes] = await Promise.all([ordersAPI.get(paymentModal.order._id), ordersAPI.listPayments(paymentModal.order._id)]);
+      setPaymentModal({ order: orderRes.data?.order || paymentModal.order, payments: payRes.data || [] });
+      // Sync detailOrder if open for same order, and refresh invoice tab if active
+      if (detailOrder && detailOrder._id === paymentModal.order._id) {
+        const freshOrder = orderRes.data?.order || detailOrder;
+        setDetailOrder(freshOrder);
+        if (detailTab === 'invoice') fetchDetailTab('invoice', freshOrder);
+      }
       fetchOrders();
     } catch (err) { toast.error(err.message || 'Failed to record payment'); }
     finally { setPayingSaving(false); }
@@ -446,16 +442,28 @@ export default function Orders() {
         items: returnItems,
         returnWarehouse: detailOrder?.warehouse?._id || detailOrder?.warehouse,
       });
-      toast.success('Return initiated');
+      toast.success('Return initiated (pending approval)');
       setReturnForm({ items: [{ lineItem: '', returnQty: 1, reason: '' }] });
       const res = await ordersAPI.get(detailOrder._id);
       setDetailOrder(res.data?.order);
-      setDetailPayments(res.data?.payments || []);
-      setDetailReturns(res.data?.returns || []);
       fetchDetailTab('returns');
       fetchOrders();
     } catch (err) { toast.error(err.message || 'Failed to initiate return'); }
     finally { setReturnSaving(false); }
+  };
+
+  const handleApproveReturn = async (returnId) => {
+    const method = refundMethodMap[returnId];
+    if (!method) return toast.error('Select a refund method before approving');
+    try {
+      await ordersAPI.approveReturn(detailOrder._id, returnId, method);
+      toast.success('Return approved');
+      setRefundMethodMap((m) => { const n = { ...m }; delete n[returnId]; return n; });
+      const res = await ordersAPI.get(detailOrder._id);
+      setDetailOrder(res.data?.order);
+      fetchDetailTab('returns');
+      fetchOrders();
+    } catch (err) { toast.error(err.message || 'Failed to approve return'); }
   };
 
   /* ───── FILTER ───── */
@@ -477,6 +485,8 @@ export default function Orders() {
         <div className="flex gap-1">
           <Button size="xs" variant="ghost" onClick={() => openDetail(r)}><Eye size={15} /></Button>
           {['placed', 'processing'].includes(r.status) && <Button size="xs" variant="ghost" onClick={() => openEdit(r)}><Edit size={15} /></Button>}
+          {!['delivered', 'cancelled', 'return', 'partial_return'].includes(r.status) && <Button size="xs" variant="ghost" title="Update status" onClick={() => openStatusModal(r)}><Truck size={15} /></Button>}
+          {['processing', 'shipped', 'in_transit', 'out_for_delivery', 'delivered'].includes(r.status) && r.paymentStatus !== 'paid' && <Button size="xs" variant="ghost" title="Payments" onClick={() => openPaymentModal(r)}><CreditCard size={15} /></Button>}
           {r.status === 'placed' && <Button size="xs" variant="ghost" className="text-red-400" onClick={() => setDeleteTarget(r)}><Trash2 size={15} /></Button>}
         </div>
       ),
@@ -485,6 +495,8 @@ export default function Orders() {
     { key: 'grandTotal', label: 'Total', render: (r) => <span className="text-slate-800 font-medium">{fmtCurrency(r.grandTotal)}</span> },
     { key: 'amountPaid', label: 'Paid', render: (r) => <span className="text-green-600 font-medium">{fmtCurrency(r.amountPaid)}</span> },
     { key: 'balanceDue', label: 'Due', render: (r) => <span className={`font-medium ${(r.balanceDue || 0) > 0 ? 'text-red-500' : 'text-slate-400'}`}>{fmtCurrency(r.balanceDue)}</span> },
+    { key: 'sellReturn', label: 'Sell Return', render: (r) => <span className={`font-medium ${(r.sellReturn || 0) > 0 ? 'text-amber-600' : 'text-slate-400'}`}>{fmtCurrency(r.sellReturn)}</span> },
+    { key: 'returnDue', label: 'Return Due', render: (r) => <span className={`font-medium ${(r.returnDue || 0) > 0 ? 'text-orange-600' : 'text-slate-400'}`}>{fmtCurrency(r.returnDue)}</span> },
     { key: 'status', label: 'Status', render: (r) => <Badge color={STATUS_COLOR[r.status]}>{r.status}</Badge> },
     { key: 'paymentStatus', label: 'Payment', render: (r) => <Badge color={PAY_STATUS_COLOR[r.paymentStatus]}>{r.paymentStatus}</Badge> },
     { key: 'createdAt', label: 'Date', render: (r) => fmtDate(r.createdAt) },
@@ -502,6 +514,9 @@ export default function Orders() {
           <div><span className="text-slate-400 text-sm">Warehouse</span><p className="text-slate-700">{o.warehouse?.name || '-'}</p></div>
           <div><span className="text-slate-400 text-sm">Status</span><p><Badge color={STATUS_COLOR[o.status]}>{o.status}</Badge></p></div>
           <div><span className="text-slate-400 text-sm">Payment</span><p><Badge color={PAY_STATUS_COLOR[o.paymentStatus]}>{o.paymentStatus}</Badge></p></div>
+          {o.referenceNumber && <div><span className="text-slate-400 text-sm">Reference #</span><p className="text-slate-700 font-mono">{o.referenceNumber}</p></div>}
+          {o.saleType && <div><span className="text-slate-400 text-sm">Sale Type</span><p className="text-slate-700 capitalize">{o.saleType}</p></div>}
+          {o.orderSource && <div><span className="text-slate-400 text-sm">Order Source</span><p className="text-slate-700 capitalize">{o.orderSource.replace('_', ' ')}</p></div>}
         </div>
         {o.shippingAddress && (
           <div><span className="text-slate-400 text-sm">Shipping Address</span><p className="text-sm text-slate-700">{[o.shippingAddress.line1, o.shippingAddress.city, o.shippingAddress.state, o.shippingAddress.zip, o.shippingAddress.country].filter(Boolean).join(', ')}</p></div>
@@ -534,89 +549,13 @@ export default function Orders() {
             <div className="flex justify-between font-semibold text-violet-700 border-t border-violet-100 pt-1"><span>Grand Total</span><span>{fmtCurrency(o.grandTotal)}</span></div>
             <div className="flex justify-between text-emerald-600"><span>Paid</span><span>{fmtCurrency(o.amountPaid)}</span></div>
             <div className="flex justify-between text-red-500"><span>Due</span><span>{fmtCurrency(o.balanceDue)}</span></div>
+            {(o.sellReturn || 0) > 0 && <div className="flex justify-between text-amber-600"><span>Sell Return</span><span>{fmtCurrency(o.sellReturn)}</span></div>}
+            {(o.returnDue || 0) > 0 && <div className="flex justify-between text-orange-600"><span>Return Due</span><span>{fmtCurrency(o.returnDue)}</span></div>}
           </div>
         </div>
       </div>
     );
   };
-
-  const renderStatus = () => {
-    const o = detailOrder;
-    const idx = STATUS_FLOW.indexOf(o.status);
-    const nextStatus = idx >= 0 && idx < STATUS_FLOW.length - 1 ? STATUS_FLOW[idx + 1] : null;
-    return (
-      <div className="space-y-4">
-        <div className="text-center">
-          <span className="text-slate-400 text-sm">Current Status</span>
-          <div className="mt-2"><Badge color={STATUS_COLOR[o.status]} className="text-lg px-4 py-1">{o.status}</Badge></div>
-        </div>
-        <div className="flex flex-wrap justify-center gap-2 mt-4">
-          {STATUS_FLOW.map((s, i) => (
-            <div key={s} className="flex items-center gap-1">
-              <div className={`w-3 h-3 rounded-full ${STATUS_FLOW.indexOf(o.status) >= i ? 'bg-violet-500' : 'bg-slate-200'}`} />
-              <span className={`text-xs ${STATUS_FLOW.indexOf(o.status) >= i ? 'text-violet-600' : 'text-slate-400'}`}>{s}</span>
-              {i < STATUS_FLOW.length - 1 && <span className="text-slate-300 mx-1">→</span>}
-            </div>
-          ))}
-        </div>
-        <div className="flex justify-center gap-3 mt-6">
-          {nextStatus && o.status !== 'cancelled' && (
-            <Button onClick={() => handleStatus(nextStatus)}>Advance to {nextStatus}</Button>
-          )}
-          {!['cancelled', 'delivered', 'returned'].includes(o.status) && (
-            <Button variant="ghost" className="text-red-500 border-red-300" onClick={() => handleStatus('cancelled')}>Cancel Order</Button>
-          )}
-        </div>
-      </div>
-    );
-  };
-
-  const renderPayments = () => (
-    <div className="space-y-4">
-      {detailLoading ? <Loader /> : (
-        <>
-          {Array.isArray(detailData) && detailData.length > 0 && (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr>
-                    <th className="py-2 text-left text-slate-500">Date</th>
-                    <th className="py-2 text-left text-slate-500">Method</th>
-                    <th className="py-2 text-right text-slate-500">Amount
-                    </th><th className="py-2 text-left text-slate-500">Reference</th>
-                    <th className="py-2 text-left text-slate-500">Notes</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {detailData.map((p, i) => (
-                    <tr key={i} className="border-b border-violet-50">
-                      <td className="py-2 text-slate-600">{fmtDate(p.createdAt || p.date)}</td>
-                      <td className="py-2"><Badge color="cyan">{p.method}</Badge></td>
-                      <td className="py-2 text-right text-emerald-600 font-medium">{fmtCurrency(p.amount)}</td>
-                      <td className="py-2 font-mono text-xs text-slate-500">{p.reference || '-'}</td>
-                      <td className="py-2 text-xs text-slate-500">{p.notes || '-'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-          {detailOrder?.paymentStatus !== 'paid' && (
-            <GlassCard className="p-4 space-y-3">
-              <h4 className="text-sm font-semibold text-violet-700 flex items-center gap-2"><CreditCard size={16} />Record Payment</h4>
-              <div className="grid grid-cols-2 gap-3">
-                <Input label="Amount" type="number" value={payForm.amount} onChange={(e) => setPayForm((p) => ({ ...p, amount: e.target.value }))} />
-                <Select label="Method" options={PAY_METHODS} value={payForm.method} onChange={(e) => setPayForm((p) => ({ ...p, method: e.target.value }))} />
-                <Input label="Reference" value={payForm.reference} onChange={(e) => setPayForm((p) => ({ ...p, reference: e.target.value }))} />
-                <Input label="Notes" value={payForm.notes} onChange={(e) => setPayForm((p) => ({ ...p, notes: e.target.value }))} />
-              </div>
-              <Button onClick={handleRecordPayment} disabled={payingSaving}>{payingSaving ? 'Recording…' : 'Record Payment'}</Button>
-            </GlassCard>
-          )}
-        </>
-      )}
-    </div>
-  );
 
   const renderReturns = () => {
     const orderProducts = [
@@ -635,14 +574,50 @@ export default function Orders() {
             {Array.isArray(detailData) && detailData.length > 0 && (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
-                  <thead><tr className="text-slate-400 border-b border-violet-100"><th className="py-2 text-left">Date</th><th className="py-2 text-left">Items</th><th className="py-2 text-left">Status</th><th className="py-2 text-right">Refund</th></tr></thead>
+                  <thead><tr className="text-slate-400 border-b border-violet-100"><th className="py-2 text-left">Date</th><th className="py-2 text-left">Items</th><th className="py-2 text-left">Status</th><th className="py-2 text-right">Return Value</th><th className="py-2 text-left min-w-[280px]">Action</th></tr></thead>
                   <tbody>
                     {detailData.map((r, i) => (
                 <tr key={i} className="border-b border-violet-50">
                         <td className="py-2 text-slate-600">{fmtDate(r.createdAt)}</td>
-                        <td className="py-2 text-xs text-slate-600">{(r.items || []).map((it) => `${it.product?.name || 'Item'} x${it.quantity}`).join(', ')}</td>
-                        <td className="py-2"><Badge color={r.status === 'completed' ? 'green' : 'amber'}>{r.status || 'pending'}</Badge></td>
-                        <td className="py-2 text-right text-emerald-600">{fmtCurrency(r.refundAmount)}</td>
+                        <td className="py-2 text-xs text-slate-600">{(r.items || []).map((it) => {
+                          const line = (detailOrder?.items || []).find((oi) => String(oi._id) === String(it.lineItemId));
+                          const name = it.product?.name || line?.productSnapshot?.name || line?.name || line?.product?.name || 'Item';
+                          return `${name} x${it.returnQty || it.quantity || 0}`;
+                        }).join(', ')}</td>
+                        <td className="py-2"><Badge color={r.status === 'approved' ? 'green' : 'amber'}>{r.status}</Badge></td>
+                        <td className="py-2 text-right text-slate-700 font-medium">{fmtCurrency(r.returnValue)}</td>
+                        <td className="py-2">
+                          {r.status === 'pending' && (
+                            <div className="flex items-center gap-2">
+                              <select
+                                className="text-xs border border-violet-200 rounded px-2 py-1 bg-white text-slate-700 focus:outline-none focus:ring-1 focus:ring-violet-400"
+                                value={refundMethodMap[r._id] || ''}
+                                onChange={(e) => setRefundMethodMap((m) => ({ ...m, [r._id]: e.target.value }))}
+                              >
+                                <option value="">Refund via…</option>
+                                <option value="cash">Cash</option>
+                                <option value="bank_transfer">Bank Transfer</option>
+                                <option value="card">Card</option>
+                                <option value="online">Online</option>
+                                <option value="wallet">Wallet</option>
+                                <option value="ledger_credit">Ledger Credit</option>
+                              </select>
+                              <Button
+                                size="xs"
+                                className={refundMethodMap[r._id] ? 'text-green-600' : 'opacity-40 cursor-not-allowed'}
+                                onClick={() => refundMethodMap[r._id] && handleApproveReturn(r._id)}
+                                title={refundMethodMap[r._id] ? 'Approve return' : 'Select refund method first'}
+                              >
+                                <CheckCircle size={15} />
+                              </Button>
+                            </div>
+                          )}
+                          {r.status === 'approved' && (
+                            <span className="text-xs text-slate-500">
+                              Approved · <span className="capitalize">{r.refundMethod?.replace('_', ' ') || '-'}</span>
+                            </span>
+                          )}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -731,6 +706,11 @@ export default function Orders() {
             </div>
             <div className="pb-4">
               <p className="text-sm text-slate-700">{h.message || h.status || '-'}</p>
+              {h.type === 'edit' && h.fromTotal !== undefined && (
+                <p className="text-xs font-medium text-amber-600 mt-0.5">
+                  Grand Total: ₹{fmtCurrency(h.fromTotal)} → ₹{fmtCurrency(h.toTotal)}
+                </p>
+              )}
               {h.note && <p className="text-xs text-slate-500 italic">{h.note}</p>}
               <p className="text-xs text-slate-400">{fmtDateTime(h.date || h.changedAt || h.createdAt)} {h.user?.name ? `• ${h.user.name}` : ''}</p>
             </div>
@@ -749,49 +729,11 @@ export default function Orders() {
           <span className="text-sm font-semibold text-slate-700 flex items-center gap-2"><ShoppingCart size={16} className="text-violet-600" /> Line Items</span>
         </div>
         {/* Product Search */}
-        <div className="relative">
-          <div className="flex items-center gap-2 border border-gray-200 rounded-lg px-3 py-2 bg-white focus-within:border-violet-400 transition-colors">
-            <Search size={16} className="text-gray-400" />
-            <input
-              type="text"
-              placeholder="Search products by name, SKU, or barcode…"
-              className="flex-1 outline-none text-sm text-slate-700 bg-transparent"
-              value={orderProductSearch}
-              onChange={(e) => setOrderProductSearch(e.target.value)}
-            />
-            {orderSearching && <span className="text-xs text-violet-500">Searching…</span>}
-          </div>
-          {orderSearchResults.length > 0 && (
-            <div className="absolute z-20 top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-auto">
-              {orderSearchResults.map(p => (
-                <button
-                  key={p._id}
-                  onClick={() => handleOrderProductClick(p)}
-                  className="w-full text-left px-4 py-2.5 hover:bg-violet-50 flex items-center justify-between border-b border-gray-50 last:border-0 transition-colors"
-                >
-                  <div className="flex items-center gap-3">
-                    {p.images?.[0]?.url ? (
-                      <img src={p.images[0].url} alt="" className="w-8 h-8 rounded object-cover" />
-                    ) : (
-                      <Package size={16} className="text-violet-400" />
-                    )}
-                    <div>
-                      <span className="text-sm font-medium text-slate-800">{p.name}</span>
-                      <span className="text-xs text-gray-500 ml-2">{p.sku}</span>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {p.type === 'parent' ? (
-                      <Badge color="purple">Parent</Badge>
-                    ) : (
-                      <span className="text-sm font-medium text-violet-600">{fmtCurrency(p.basePrice)}</span>
-                    )}
-                  </div>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
+        <ProductSearch
+          warehouseId={form.warehouse}
+          onSelect={handleProductSearchSelect}
+          placeholder="Search products by name, SKU, or barcode…"
+        />
         {/* Items Table */}
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -799,6 +741,7 @@ export default function Orders() {
               <tr className="text-slate-500 border-b border-gray-200 text-xs uppercase">
                 <th className="py-2 text-left w-8">#</th>
                 <th className="py-2 text-left">Product</th>
+                <th className="py-2 text-center w-28">Available Qty</th>
                 <th className="py-2 text-center w-20">QTY</th>
                 <th className="py-2 text-center w-24">Unit Price</th>
                 <th className="py-2 text-center w-20">Discount</th>
@@ -808,10 +751,13 @@ export default function Orders() {
             </thead>
             <tbody>
               {form.items.filter(i => i.product).length === 0 ? (
-                <tr><td colSpan="7" className="py-6 text-center text-gray-400">Search and add products above</td></tr>
+                <tr><td colSpan="8" className="py-6 text-center text-gray-400">Search and add products above</td></tr>
               ) : form.items.filter(i => i.product).map((item, idx) => {
                 const stockInfo = stockCache[item.product];
-                const warehouseQty = stockInfo && warehouseId ? (stockInfo[String(warehouseId)] ?? null) : null;
+                const warehouseStock = stockInfo && warehouseId ? (stockInfo[String(warehouseId)] ?? null) : null;
+                const warehouseQty = warehouseStock?.total ?? null;
+                const warehouseReserved = warehouseStock?.reserved ?? 0;
+                const warehouseAvailable = warehouseStock?.available ?? null;
                 const displayName = item._name || productMap[item.product]?.name || 'Product';
                 const displaySku = item._sku || productMap[item.product]?.sku || '';
                 return (
@@ -822,10 +768,15 @@ export default function Orders() {
                         <span className="text-slate-800 font-medium">{displayName}</span>
                         {displaySku && <div className="text-xs text-gray-500">{displaySku}</div>}
                         {warehouseQty !== null && warehouseQty !== undefined && (
-                          <span className={`text-xs ${warehouseQty === 0 ? 'text-red-500' : warehouseQty < 10 ? 'text-amber-500' : 'text-green-600'}`}>Stock: {warehouseQty}</span>
+                          <span className={`text-xs ${warehouseAvailable <= 0 ? 'text-red-500' : warehouseAvailable < 10 ? 'text-amber-500' : 'text-green-600'}`}>Total: {warehouseQty} • Reserved: {warehouseReserved} • Available: {warehouseAvailable}</span>
                         )}
                         {!warehouseId && item.product && <span className="text-[11px] text-slate-300 italic">Select warehouse for stock</span>}
                       </div>
+                    </td>
+                    <td className="py-2 text-center font-medium">
+                      {warehouseAvailable !== null && warehouseAvailable !== undefined ? (
+                        <span className={`${warehouseAvailable <= 0 ? 'text-red-500' : warehouseAvailable < 10 ? 'text-amber-500' : 'text-emerald-600'}`}>{warehouseAvailable}</span>
+                      ) : <span className="text-slate-300">-</span>}
                     </td>
                     <td className="py-2 text-center">
                       <input type="number" min="1" className="w-16 text-center border border-gray-200 rounded px-1 py-1 text-sm" value={item.quantity} onChange={setItemField(idx, 'quantity')} />
@@ -926,7 +877,7 @@ export default function Orders() {
           <div className="grid grid-cols-3 gap-3">
             <Input label="Reference #" value={form.referenceNumber} onChange={setFormField('referenceNumber')} placeholder="Ref / PO number" />
             <Select label="Sale Type" options={[{ value: '', label: 'Select' }, { value: 'retail', label: 'Retail' }, { value: 'wholesale', label: 'Wholesale' }, { value: 'online', label: 'Online' }]} value={form.saleType} onChange={setFormField('saleType')} />
-            <Select label="Order Source" options={[{ value: '', label: 'Select' }, { value: 'walk_in', label: 'Walk-in' }, { value: 'phone', label: 'Phone' }, { value: 'online', label: 'Online' }, { value: 'marketplace', label: 'Marketplace' }]} value={form.orderSource} onChange={setFormField('orderSource')} />
+            <Select label="Order Source" options={[{ value: '', label: 'Select' }, { value: 'walk_in', label: 'Walk-in' }, { value: 'phone', label: 'Phone' }, { value: 'online', label: 'Online' }, { value: 'marketplace', label: 'Marketplace' }, { value: 'pos', label: 'POS' }, { value: 'website', label: 'Website' }]} value={form.orderSource} onChange={setFormField('orderSource')} />
           </div>
           {renderItemsEditor()}
           <div className="grid grid-cols-2 gap-3">
@@ -944,6 +895,98 @@ export default function Orders() {
       {/* Delete Confirm */}
       <ConfirmDialog open={!!deleteTarget} onClose={() => setDeleteTarget(null)} onConfirm={handleDelete} loading={deleting} title="Delete Order" message={`Delete order ${deleteTarget?.orderNumber}? This cannot be undone.`} />
 
+      {/* Standalone Status Modal */}
+      <Modal open={!!statusModal} onClose={() => setStatusModal(null)} title={`Status — ${statusModal?.orderNumber || ''}`} size="md">
+        {statusModal && (() => {
+          const o = statusModal;
+          const idx = STATUS_FLOW.indexOf(o.status);
+          const nextStatus = idx >= 0 && idx < STATUS_FLOW.length - 1 ? STATUS_FLOW[idx + 1] : null;
+          return (
+            <div className="space-y-4">
+              <div className="text-center">
+                <span className="text-slate-400 text-sm">Current Status</span>
+                <div className="mt-2"><Badge color={STATUS_COLOR[o.status]} className="text-lg px-4 py-1">{o.status}</Badge></div>
+              </div>
+              <div className="flex flex-wrap justify-center gap-2 mt-4">
+                {STATUS_FLOW.map((s, i) => (
+                  <div key={s} className="flex items-center gap-1">
+                    <div className={`w-3 h-3 rounded-full ${STATUS_FLOW.indexOf(o.status) >= i ? 'bg-violet-500' : 'bg-slate-200'}`} />
+                    <span className={`text-xs ${STATUS_FLOW.indexOf(o.status) >= i ? 'text-violet-600' : 'text-slate-400'}`}>{s}</span>
+                    {i < STATUS_FLOW.length - 1 && <span className="text-slate-300 mx-1">→</span>}
+                  </div>
+                ))}
+              </div>
+              <div className="flex justify-center gap-3 mt-6">
+                {nextStatus && o.status !== 'cancelled' && (
+                  <Button onClick={() => handleStatusModalAction(nextStatus)}>Advance to {nextStatus}</Button>
+                )}
+                {!['cancelled', 'delivered', 'returned', 'return', 'partial_return'].includes(o.status) && (
+                  <Button variant="ghost" className="text-red-500 border-red-300" onClick={() => handleStatusModalAction('cancelled')}>Cancel Order</Button>
+                )}
+              </div>
+            </div>
+          );
+        })()}
+      </Modal>
+
+      {/* Standalone Payments Modal */}
+      <Modal open={!!paymentModal} onClose={() => setPaymentModal(null)} title={`Payments — ${paymentModal?.order?.orderNumber || ''}`} size="lg">
+        {paymentModal && (
+          <div className="space-y-4">
+            {paymentModalLoading ? <Loader /> : (
+              <>
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div className="flex gap-4 text-sm">
+                    <span className="text-slate-600">Total: <strong className="text-slate-800">₹{fmtCurrency(paymentModal.order.grandTotal)}</strong></span>
+                    <span className="text-green-600">Paid: <strong>₹{fmtCurrency(paymentModal.order.amountPaid)}</strong></span>
+                    <span className="text-red-500">Due: <strong>₹{fmtCurrency(paymentModal.order.balanceDue)}</strong></span>
+                  </div>
+                  <Badge color={PAY_STATUS_COLOR[paymentModal.order.paymentStatus]}>{paymentModal.order.paymentStatus}</Badge>
+                </div>
+                {paymentModal.payments.length > 0 && (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="text-slate-500 border-b border-violet-100">
+                          <th className="py-2 text-left">Date</th>
+                          <th className="py-2 text-left">Method</th>
+                          <th className="py-2 text-right">Amount</th>
+                          <th className="py-2 text-left">Reference</th>
+                          <th className="py-2 text-left">Notes</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {paymentModal.payments.map((p, i) => (
+                          <tr key={i} className="border-b border-violet-50">
+                            <td className="py-2 text-slate-600">{fmtDate(p.createdAt || p.date)}</td>
+                            <td className="py-2"><Badge color="cyan">{p.method}</Badge></td>
+                            <td className="py-2 text-right text-emerald-600 font-medium">₹{fmtCurrency(p.amount)}</td>
+                            <td className="py-2 font-mono text-xs text-slate-500">{p.reference || '-'}</td>
+                            <td className="py-2 text-xs text-slate-500">{p.notes || '-'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+                {paymentModal.order.paymentStatus !== 'paid' && (
+                  <GlassCard className="p-4 space-y-3">
+                    <h4 className="text-sm font-semibold text-violet-700 flex items-center gap-2"><CreditCard size={16} />Record Payment</h4>
+                    <div className="grid grid-cols-2 gap-3">
+                      <Input label={`Amount (Max \u20b9${fmtCurrency(paymentModal.order.balanceDue)})`} type="number" min="0.01" max={paymentModal.order.balanceDue} value={payForm.amount} onChange={(e) => setPayForm((p) => ({ ...p, amount: e.target.value }))} />
+                      <Select label="Method" options={PAY_METHODS} value={payForm.method} onChange={(e) => setPayForm((p) => ({ ...p, method: e.target.value }))} />
+                      <Input label="Reference" value={payForm.reference} onChange={(e) => setPayForm((p) => ({ ...p, reference: e.target.value }))} />
+                      <Input label="Notes" value={payForm.notes} onChange={(e) => setPayForm((p) => ({ ...p, notes: e.target.value }))} />
+                    </div>
+                    <Button onClick={handlePaymentModalRecord} disabled={payingSaving}>{payingSaving ? 'Recording…' : 'Record Payment'}</Button>
+                  </GlassCard>
+                )}
+              </>
+            )}
+          </div>
+        )}
+      </Modal>
+
       {/* Detail Modal */}
       <Modal open={!!detailOrder} onClose={closeDetail} title={`Order ${detailOrder?.orderNumber || ''}`} size="full">
         {detailOrder && (
@@ -951,8 +994,6 @@ export default function Orders() {
             <TabList tabs={DETAIL_TABS} active={detailTab} onChange={switchDetailTab} />
             <div className="min-h-[300px]">
               {detailTab === 'details' && renderDetails()}
-              {detailTab === 'status' && renderStatus()}
-              {detailTab === 'payments' && renderPayments()}
               {detailTab === 'returns' && renderReturns()}
               {detailTab === 'invoice' && renderInvoice()}
               {detailTab === 'history' && renderHistory()}
@@ -961,55 +1002,7 @@ export default function Orders() {
         )}
       </Modal>
 
-      {/* Variant Selection Modal (for order items) */}
-      <Modal open={!!orderVariantModal} onClose={() => setOrderVariantModal(null)} title="Select Variants" size="lg">
-        {orderVariantModal && (
-          <div>
-            <p className="text-sm text-slate-500 mb-4">
-              {orderVariantModal.product.name} — {orderVariantModal.variants.length} variant{orderVariantModal.variants.length !== 1 ? 's' : ''} available
-            </p>
-            <div className="flex gap-3 mb-4">
-              <button onClick={() => setOrderSelectedVariants(orderVariantModal.variants.reduce((a, v) => ({ ...a, [v._id]: true }), {}))} className="text-sm text-violet-600 hover:underline font-medium">Select All</button>
-              <button onClick={() => setOrderSelectedVariants({})} className="text-sm text-slate-500 hover:underline font-medium">Deselect All</button>
-            </div>
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-gray-200 text-slate-500 text-xs uppercase">
-                  <th className="py-2 text-left w-10"></th>
-                  <th className="py-2 text-left">Variant</th>
-                  <th className="py-2 text-left">SKU</th>
-                  <th className="py-2 text-right">Price</th>
-                </tr>
-              </thead>
-              <tbody>
-                {orderVariantModal.variants.map(v => {
-                  const vStocks = orderVariantModal.stocks?.filter(s => String(s.product) === String(v._id) || String(s.product?._id) === String(v._id));
-                  const whStock = form.warehouse ? vStocks?.find(s => String(s.warehouse?._id || s.warehouse) === form.warehouse)?.quantity : null;
-                  return (
-                    <tr key={v._id} className="border-b border-gray-50 hover:bg-violet-50/50 cursor-pointer" onClick={() => setOrderSelectedVariants(prev => ({ ...prev, [v._id]: !prev[v._id] }))}>
-                      <td className="py-3">
-                        <input type="checkbox" checked={!!orderSelectedVariants[v._id]} onChange={() => {}} className="w-4 h-4 rounded border-gray-300 text-violet-600 focus:ring-violet-500" />
-                      </td>
-                      <td className="py-3">
-                        <span className="text-slate-800 font-medium">{v.variantValue || v.name}</span>
-                        {whStock !== null && whStock !== undefined && <span className="text-xs text-green-600 ml-2">Stock: {whStock}</span>}
-                      </td>
-                      <td className="py-3 font-mono text-xs text-gray-500">{v.sku}</td>
-                      <td className="py-3 text-right font-medium text-slate-800">{fmtCurrency(v.basePrice)}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-            <div className="flex justify-end gap-3 mt-6">
-              <Button variant="ghost" onClick={() => setOrderVariantModal(null)}>Cancel</Button>
-              <Button onClick={handleOrderAddVariants}>
-                Add {Object.values(orderSelectedVariants).filter(Boolean).length} Variant{Object.values(orderSelectedVariants).filter(Boolean).length !== 1 ? 's' : ''}
-              </Button>
-            </div>
-          </div>
-        )}
-      </Modal>
+
     </div>
   );
 }

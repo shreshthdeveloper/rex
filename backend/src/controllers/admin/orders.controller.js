@@ -4,7 +4,7 @@ const ApiResponse = require('../../utils/ApiResponse');
 const { paginate, paginationMeta } = require('../../utils/helpers');
 const { getNextSequence } = require('../../services/counterService');
 const { resolvePrice } = require('../../services/priceResolver');
-const { reserveStock, releaseReserved, deductOnShipment } = require('../../services/stockService');
+const { reserveStock, releaseReserved, deductOnShipment, receiveReturnStock, releaseReturnStock } = require('../../services/stockService');
 const { createCustomerLedgerEntry } = require('../../services/ledgerService');
 const { withTransaction } = require('../../utils/transaction');
 
@@ -21,6 +21,8 @@ const calcLineItem = (item) => {
   const lineTotal = afterDiscount * item.quantity + taxAmount;
   return { discountAmount: discount, taxAmount: Math.round(taxAmount * 100) / 100, lineTotal: Math.round(lineTotal * 100) / 100 };
 };
+
+const round2 = (value) => Math.round((Number(value) || 0) * 100) / 100;
 
 const list = asyncHandler(async (req, res) => {
   const { page, limit, status, customer, warehouse, startDate, endDate } = req.query;
@@ -92,9 +94,7 @@ const createOrder = asyncHandler(async (req, res) => {
       lineItem.taxAmount = calcs.taxAmount;
       lineItem.lineTotal = calcs.lineTotal;
       orderItems.push(lineItem);
-
-      // Reserve stock
-      await reserveStock(req.models, product._id, warehouseId, item.quantity, session);
+      // NOTE: Stock is reserved when order status moves to 'shipped', not at placement.
     }
 
     // Calculate subtotal
@@ -149,15 +149,10 @@ const createOrder = asyncHandler(async (req, res) => {
     });
     await order.save({ session });
 
-    // Create ledger debit entry (invoice)
-    await createCustomerLedgerEntry(req.models, {
-      customerId: customer._id, transactionType: 'invoice',
-      referenceType: 'order', referenceId: order._id, referenceNumber: orderNumber,
-      debit: grandTotal, credit: 0, narration: `Order ${orderNumber} — Sale invoice`,
-      userId: req.user._id,
-    }, session);
+    // NOTE: Ledger invoice is posted when order moves to 'processing' (confirmed), not at placement.
+    // Payment ledger entries are also only created when order is processing+.
 
-    // If payment made, record it
+    // If payment made, record it (but no ledger entry yet)
     if (amountPaid > 0) {
       const payment = new req.models.OrderPayment({
         order: order._id, customer: customer._id, amount: amountPaid,
@@ -166,14 +161,7 @@ const createOrder = asyncHandler(async (req, res) => {
       });
       await payment.save({ session });
 
-      await createCustomerLedgerEntry(req.models, {
-        customerId: customer._id, transactionType: 'payment',
-        referenceType: 'payment', referenceId: payment._id,
-        referenceNumber: orderNumber,
-        debit: 0, credit: amountPaid,
-        narration: `Payment received for ${orderNumber}`,
-        userId: req.user._id,
-      }, session);
+      // NOTE: Payment ledger entry will be created when order moves to processing
     }
 
     return order;
@@ -201,27 +189,26 @@ const updateOrder = asyncHandler(async (req, res) => {
   // Save edit history
   order.editHistory.push({ snapshot: order.toObject(), editedAt: new Date(), editedBy: req.user._id });
 
-  const { customerId, warehouseId, items, shippingCharge, notes, shippingAddress } = req.body;
+  const { customerId, warehouseId, items, shippingCharge, notes, shippingAddress, referenceNumber, saleType, orderSource } = req.body;
+  const oldGrandTotal = order.grandTotal;
 
   // Simple fields
   if (notes !== undefined) order.notes = notes;
   if (shippingAddress !== undefined) order.shippingAddress = shippingAddress;
   if (shippingCharge !== undefined) order.shippingCharge = Number(shippingCharge) || 0;
+  if (referenceNumber !== undefined) order.referenceNumber = referenceNumber;
+  if (saleType !== undefined) order.saleType = saleType;
+  if (orderSource !== undefined) order.orderSource = orderSource;
 
   // Customer & warehouse
   if (customerId) order.customer = customerId;
   const warehouseChanged = warehouseId && warehouseId.toString() !== order.warehouse.toString();
   const newWarehouseId = warehouseId || order.warehouse;
 
-  // Items update (with stock adjustments)
+  // Items update
   if (items && Array.isArray(items) && items.length > 0) {
     await withTransaction(req.orgConn, async (session) => {
-      // Release reserved stock for old items
-      for (const oldItem of order.items) {
-        if (oldItem.status === 'active') {
-          await releaseReserved(req.models, oldItem.product, order.warehouse, oldItem.quantity, session);
-        }
-      }
+      // NOTE: No stock reservation changes here — stock is only reserved at 'shipped' status.
       // Build new line items
       const orderItems = [];
       for (const item of items) {
@@ -250,8 +237,6 @@ const updateOrder = asyncHandler(async (req, res) => {
         lineItem.taxAmount = calcs.taxAmount;
         lineItem.lineTotal = calcs.lineTotal;
         orderItems.push(lineItem);
-        // Reserve stock in new warehouse
-        await reserveStock(req.models, product._id, newWarehouseId, Number(item.quantity), session);
       }
       order.items = orderItems;
       if (warehouseChanged) order.warehouse = newWarehouseId;
@@ -267,6 +252,29 @@ const updateOrder = asyncHandler(async (req, res) => {
       else if (order.amountPaid > 0) order.paymentStatus = 'partial';
       else order.paymentStatus = 'unpaid';
       await order.save({ session });
+      // Ledger adjustment if order was already invoiced (processing status)
+      if (order.status === 'processing') {
+        const diff = order.grandTotal - oldGrandTotal;
+        if (Math.abs(diff) > 0.001) {
+          if (diff > 0) {
+            await createCustomerLedgerEntry(req.models, {
+              customerId: order.customer, transactionType: 'debit_note',
+              referenceType: 'order', referenceId: order._id, referenceNumber: order.orderNumber,
+              debit: diff, credit: 0,
+              narration: `Order ${order.orderNumber} revised — amount increased by ₹${diff.toFixed(2)}`,
+              userId: req.user._id,
+            }, session);
+          } else {
+            await createCustomerLedgerEntry(req.models, {
+              customerId: order.customer, transactionType: 'credit_note',
+              referenceType: 'order', referenceId: order._id, referenceNumber: order.orderNumber,
+              debit: 0, credit: Math.abs(diff),
+              narration: `Order ${order.orderNumber} revised — amount decreased by ₹${Math.abs(diff).toFixed(2)}`,
+              userId: req.user._id,
+            }, session);
+          }
+        }
+      }
     });
   } else {
     // Recalculate if only shippingCharge changed
@@ -277,6 +285,29 @@ const updateOrder = asyncHandler(async (req, res) => {
       order.balanceDue = Math.round((grandTotal - (order.amountPaid || 0)) * 100) / 100;
     }
     await order.save();
+    // Ledger adjustment if order was already invoiced (processing status)
+    if (order.status === 'processing') {
+      const diff = order.grandTotal - oldGrandTotal;
+      if (Math.abs(diff) > 0.001) {
+        if (diff > 0) {
+          await createCustomerLedgerEntry(req.models, {
+            customerId: order.customer, transactionType: 'debit_note',
+            referenceType: 'order', referenceId: order._id, referenceNumber: order.orderNumber,
+            debit: diff, credit: 0,
+            narration: `Order ${order.orderNumber} revised — amount increased by ₹${diff.toFixed(2)}`,
+            userId: req.user._id,
+          });
+        } else {
+          await createCustomerLedgerEntry(req.models, {
+            customerId: order.customer, transactionType: 'credit_note',
+            referenceType: 'order', referenceId: order._id, referenceNumber: order.orderNumber,
+            debit: 0, credit: Math.abs(diff),
+            narration: `Order ${order.orderNumber} revised — amount decreased by ₹${Math.abs(diff).toFixed(2)}`,
+            userId: req.user._id,
+          });
+        }
+      }
+    }
   }
   res.json(new ApiResponse(200, order, 'Order updated'));
 });
@@ -284,15 +315,19 @@ const updateOrder = asyncHandler(async (req, res) => {
 const deleteOrder = asyncHandler(async (req, res) => {
   const order = await req.models.Order.findById(req.params.id);
   if (!order) throw new ApiError(404, 'Order not found');
+  const reservedStatuses = ['shipped', 'in_transit', 'out_for_delivery', 'failed_delivery'];
   await withTransaction(req.orgConn, async (session) => {
-    // Release reserved stock
-    for (const item of order.items) {
-      if (item.status === 'active') {
-        await releaseReserved(req.models, item.product, order.warehouse, item.quantity, session);
+    // Release reserved stock only if items were reserved (shipped+)
+    if (reservedStatuses.includes(order.status)) {
+      for (const item of order.items) {
+        if (item.status === 'active') {
+          await releaseReserved(req.models, item.product, order.warehouse, item.quantity, session);
+        }
       }
     }
-    // Ledger credit note
-    if (order.grandTotal > 0) {
+    // Ledger credit note — only if the order was previously invoiced (processing+)
+    const wasInvoiced = !['placed'].includes(order.status);
+    if (wasInvoiced && order.grandTotal > 0) {
       await createCustomerLedgerEntry(req.models, {
         customerId: order.customer, transactionType: 'credit_note',
         referenceType: 'order', referenceId: order._id, referenceNumber: order.orderNumber,
@@ -310,8 +345,10 @@ const deleteOrder = asyncHandler(async (req, res) => {
 
 const updateStatus = asyncHandler(async (req, res) => {
   const { status, note } = req.body;
-  const order = await req.models.Order.findById(req.params.id);
-  if (!order) throw new ApiError(404, 'Order not found');
+
+  // Pre-validate order existence and transition before starting a session
+  const orderCheck = await req.models.Order.findById(req.params.id);
+  if (!orderCheck) throw new ApiError(404, 'Order not found');
 
   const validTransitions = {
     placed: ['processing', 'shipped', 'cancelled'],
@@ -323,14 +360,45 @@ const updateStatus = asyncHandler(async (req, res) => {
     failed_delivery: ['shipped', 'cancelled'],
   };
 
-  const allowed = validTransitions[order.status] || [];
+  const allowed = validTransitions[orderCheck.status] || [];
   if (!allowed.includes(status)) {
-    throw new ApiError(400, `Cannot transition from ${order.status} to ${status}`);
+    throw new ApiError(400, `Cannot transition from ${orderCheck.status} to ${status}`);
   }
 
+  let savedOrder;
   await withTransaction(req.orgConn, async (session) => {
-    // On SHIPPED: deduct stock
+    // Re-fetch order INSIDE the transaction for snapshot consistency
+    const order = await req.models.Order.findById(req.params.id).session(session);
+    if (!order) throw new ApiError(404, 'Order not found');
+
+    // Re-validate inside transaction (guard against race where status changed between checks)
+    const allowedInner = validTransitions[order.status] || [];
+    if (!allowedInner.includes(status)) {
+      throw new ApiError(400, `Cannot transition from ${order.status} to ${status}`);
+    }
+
+    // On PROCESSING: post sale invoice to customer ledger (order is now confirmed)
+    if (status === 'processing') {
+      await createCustomerLedgerEntry(req.models, {
+        customerId: order.customer, transactionType: 'invoice',
+        referenceType: 'order', referenceId: order._id, referenceNumber: order.orderNumber,
+        debit: order.grandTotal, credit: 0,
+        narration: `Order ${order.orderNumber} — Sale invoice (confirmed)`,
+        userId: req.user._id,
+      }, session);
+    }
+
+    // On SHIPPED: reserve stock
     if (status === 'shipped') {
+      for (const item of order.items) {
+        if (item.status === 'active') {
+          await reserveStock(req.models, item.product, order.warehouse, item.quantity, session);
+        }
+      }
+    }
+
+    // On DELIVERED: deduct reserved stock from actual inventory
+    if (status === 'delivered') {
       for (const item of order.items) {
         if (item.status === 'active') {
           await deductOnShipment(req.models, req.orgConn, {
@@ -342,14 +410,18 @@ const updateStatus = asyncHandler(async (req, res) => {
       }
     }
 
-    // On CANCELLED: release reserved stock + ledger credit note
+    // On CANCELLED: release reserved stock only if items were already reserved (shipped+)
+    const reservedStatuses = ['shipped', 'in_transit', 'out_for_delivery', 'failed_delivery'];
     if (status === 'cancelled') {
-      for (const item of order.items) {
-        if (item.status === 'active') {
-          await releaseReserved(req.models, item.product, order.warehouse, item.quantity, session);
+      if (reservedStatuses.includes(order.status)) {
+        for (const item of order.items) {
+          if (item.status === 'active') {
+            await releaseReserved(req.models, item.product, order.warehouse, item.quantity, session);
+          }
         }
       }
-      if (order.grandTotal > 0) {
+      const wasInvoiced = !['placed'].includes(order.status);
+      if (wasInvoiced && order.grandTotal > 0) {
         await createCustomerLedgerEntry(req.models, {
           customerId: order.customer, transactionType: 'credit_note',
           referenceType: 'order', referenceId: order._id, referenceNumber: order.orderNumber,
@@ -362,8 +434,9 @@ const updateStatus = asyncHandler(async (req, res) => {
     order.status = status;
     order.statusHistory.push({ status, changedAt: new Date(), changedBy: req.user._id, note: note || '' });
     await order.save({ session });
+    savedOrder = order;
   });
-  res.json(new ApiResponse(200, order, `Status updated to ${status}`));
+  res.json(new ApiResponse(200, savedOrder, `Status updated to ${status}`));
 });
 
 const recordPayment = asyncHandler(async (req, res) => {
@@ -371,6 +444,8 @@ const recordPayment = asyncHandler(async (req, res) => {
   const order = await req.models.Order.findById(req.params.id);
   if (!order) throw new ApiError(404, 'Order not found');
   if (amount <= 0) throw new ApiError(400, 'Amount must be positive');
+  if (order.status === 'placed') throw new ApiError(400, 'Cannot record payment on placed orders. Advance to processing first.');
+  if (amount > order.balanceDue + 0.001) throw new ApiError(400, `Amount ₹${amount} exceeds balance due ₹${order.balanceDue}`);
 
   const { result: payment } = await withTransaction(req.orgConn, async (session) => {
     const payment = new req.models.OrderPayment({
@@ -407,85 +482,194 @@ const listPayments = asyncHandler(async (req, res) => {
 });
 
 const initiateReturn = asyncHandler(async (req, res) => {
-  const { returnType, items, returnWarehouse, refundAmount, refundMethod, notes } = req.body;
+  const { returnType, items, returnWarehouse, notes } = req.body;
   if (!Array.isArray(items) || !items.length) throw new ApiError(400, 'At least one return item is required');
-  // Validate each item has required fields
   for (const it of items) {
     if (!it.lineItemId) throw new ApiError(400, 'Each return item must have a lineItemId');
     if (!it.product) throw new ApiError(400, 'Each return item must have a product');
     if (!it.returnQty || it.returnQty < 1) throw new ApiError(400, 'Each return item must have a valid returnQty');
   }
-  const order = await req.models.Order.findById(req.params.id);
-  if (!order) throw new ApiError(404, 'Order not found');
-  if (!['delivered', 'partial_return'].includes(order.status)) {
-    throw new ApiError(400, 'Returns can only be initiated on delivered orders');
-  }
-
-  const returnNumber = await getNextSequence(req.models, 'order_return', 'RTN-');
 
   const { result: returnDoc } = await withTransaction(req.orgConn, async (session) => {
+    const order = await req.models.Order.findById(req.params.id).session(session);
+    if (!order) throw new ApiError(404, 'Order not found');
+    if (!['delivered', 'partial_return'].includes(order.status)) {
+      throw new ApiError(400, 'Returns can only be initiated on delivered orders');
+    }
+
+    const returnNumber = await getNextSequence(req.models, 'order_return', 'RTN-');
+    const returnDocId = new req.models.OrderReturn({})._id;
+
+    const normalizedItems = [];
+    let currentReturnValue = 0;
+
+    for (const retItem of items) {
+      const lineItem = order.items.id(retItem.lineItemId);
+      if (!lineItem) throw new ApiError(400, 'Invalid line item selected for return');
+
+      const availableToReturn = lineItem.quantity - lineItem.returnedQty;
+      if (retItem.returnQty > availableToReturn) {
+        throw new ApiError(400, `Cannot return ${retItem.returnQty} units. Only ${availableToReturn} available.`);
+      }
+
+      // Return value = proportional lineTotal (tax-inclusive)
+      const returnValuePerUnit = round2(lineItem.lineTotal / lineItem.quantity);
+      const lineAmount = round2(returnValuePerUnit * Number(retItem.returnQty));
+      currentReturnValue = round2(currentReturnValue + lineAmount);
+
+      normalizedItems.push({
+        lineItemId: retItem.lineItemId,
+        product: retItem.product,
+        returnQty: Number(retItem.returnQty),
+        unitPrice: returnValuePerUnit,
+        lineAmount,
+        reason: retItem.reason || '',
+      });
+
+      // Receive stock as quarantined (qty + reserved both increase, available unchanged)
+      await receiveReturnStock(req.models, req.orgConn, {
+        productId: retItem.product,
+        warehouseId: returnWarehouse || order.warehouse,
+        qty: Number(retItem.returnQty),
+        returnId: returnDocId,
+        returnNumber,
+        userId: req.user._id,
+      }, session);
+    }
+
     const returnDoc = new req.models.OrderReturn({
+      _id: returnDocId,
       returnNumber, order: order._id, customer: order.customer,
-      returnType, items, returnWarehouse: returnWarehouse || order.warehouse,
-      refundAmount: refundAmount || 0, refundMethod: refundMethod || 'ledger_credit',
-      status: 'approved', // Auto-approve for simplicity
+      returnType, items: normalizedItems, returnWarehouse: returnWarehouse || order.warehouse,
+      returnValue: currentReturnValue,
+      refundAmount: 0,
+      status: 'pending',
       notes: notes || '', createdBy: req.user._id,
     });
     await returnDoc.save({ session });
 
-    // Process return: update line items, restore stock, ledger credit
-    for (const retItem of items) {
+    return returnDoc;
+  });
+  res.status(201).json(new ApiResponse(201, returnDoc, 'Return created (pending approval)'));
+});
+
+/**
+ * Approve a pending return — single function handling all financial + stock side-effects.
+ *
+ * Ledger accounting:
+ *   credit_note (credit) for returnValue — reduces customer receivable.
+ *   The customer's running ledger balance naturally reflects whether we owe them.
+ *
+ * Order fields updated:
+ *   sellReturn  += returnValue
+ *   effectiveOwed = grandTotal - sellReturn
+ *   balanceDue  = max(0, effectiveOwed - amountPaid)
+ *   returnDue   = max(0, amountPaid - effectiveOwed)
+ */
+const approveReturn = asyncHandler(async (req, res) => {
+  const { returnId } = req.params;
+  const { refundMethod } = req.body;
+
+  const VALID_REFUND_METHODS = ['cash', 'bank_transfer', 'card', 'online', 'wallet', 'ledger_credit'];
+  if (!refundMethod || !VALID_REFUND_METHODS.includes(refundMethod)) {
+    throw new ApiError(400, 'A valid refund method is required to approve a return');
+  }
+
+  const { result: returnDoc } = await withTransaction(req.orgConn, async (session) => {
+    const returnDoc = await req.models.OrderReturn.findById(returnId).session(session);
+    if (!returnDoc) throw new ApiError(404, 'Return not found');
+    if (returnDoc.status !== 'pending') throw new ApiError(400, 'Only pending returns can be approved');
+
+    const order = await req.models.Order.findById(returnDoc.order).session(session);
+    if (!order) throw new ApiError(404, 'Order not found');
+
+    // 1. Update line item statuses
+    for (const retItem of returnDoc.items) {
       const lineItem = order.items.id(retItem.lineItemId);
       if (!lineItem) continue;
-
-      // Validate return quantity doesn't exceed available quantity
-      const availableToReturn = lineItem.quantity - lineItem.returnedQty;
-      if (retItem.returnQty > availableToReturn) {
-        throw new ApiError(400, `Cannot return ${retItem.returnQty} units. Only ${availableToReturn} units available for return on this line item.`);
-      }
-
       lineItem.returnedQty += retItem.returnQty;
       if (lineItem.returnedQty >= lineItem.quantity) lineItem.status = 'returned';
       else lineItem.status = 'partial_returned';
+    }
 
-      // Restore stock
-      const { updateStock } = require('../../services/stockService');
-      await updateStock(req.models, req.orgConn, {
+    // 2. Release quarantined stock → available
+    for (const retItem of returnDoc.items) {
+      await releaseReturnStock(req.models, req.orgConn, {
         productId: retItem.product,
-        warehouseId: returnWarehouse || order.warehouse,
-        quantityChange: retItem.returnQty,
-        movementType: 'return_in',
-        referenceType: 'return',
-        referenceId: returnDoc._id,
-        referenceNumber: returnNumber,
-        notes: `Return from order ${order.orderNumber}`,
+        warehouseId: returnDoc.returnWarehouse,
+        qty: retItem.returnQty,
+        returnId: returnDoc._id,
+        returnNumber: returnDoc.returnNumber,
         userId: req.user._id,
       }, session);
     }
 
-    // Update order status
+    // 3. Financial recalculation
+    order.sellReturn = round2((order.sellReturn || 0) + returnDoc.returnValue);
+    const effectiveOwed = round2(order.grandTotal - order.sellReturn);
+
+    if (order.amountPaid <= effectiveOwed) {
+      order.balanceDue = round2(effectiveOwed - order.amountPaid);
+      order.returnDue = 0;
+    } else {
+      order.balanceDue = 0;
+      order.returnDue = round2(order.amountPaid - effectiveOwed);
+    }
+
+    // Compute refund amount for this return (how much of returnDue is new from this approval)
+    returnDoc.refundAmount = order.returnDue;
+
+    // 4. Payment status
+    if (order.balanceDue <= 0 && effectiveOwed <= 0) {
+      order.paymentStatus = order.amountPaid > 0 ? 'paid' : 'unpaid';
+    } else if (order.balanceDue <= 0) {
+      order.paymentStatus = 'paid';
+    } else if (order.amountPaid > 0) {
+      order.paymentStatus = 'partial';
+    } else {
+      order.paymentStatus = 'unpaid';
+    }
+
+    // 5. Order status
     const allReturned = order.items.every((i) => i.status === 'returned' || i.status === 'cancelled');
     order.status = allReturned ? 'return' : 'partial_return';
-    order.statusHistory.push({ status: order.status, changedAt: new Date(), changedBy: req.user._id, note: `Return ${returnNumber}` });
+    order.statusHistory.push({
+      status: order.status, changedAt: new Date(), changedBy: req.user._id,
+      note: `Return ${returnDoc.returnNumber} approved`,
+    });
     await order.save({ session });
 
-    // Ledger credit note
-    if (refundAmount && refundAmount > 0) {
+    // 6. Ledger: credit note reduces receivable (goods return — reverses part of the sale)
+    if (returnDoc.returnValue > 0) {
+      const cashRefundNote = order.returnDue > 0
+        ? ` | cash refund ₹${order.returnDue.toFixed(2)} due via ${refundMethod}`
+        : ` | no cash refund (customer balance still due)`;
       await createCustomerLedgerEntry(req.models, {
         customerId: order.customer, transactionType: 'credit_note',
-        referenceType: 'return', referenceId: returnDoc._id, referenceNumber: returnNumber,
-        debit: 0, credit: refundAmount,
-        narration: `Return ${returnNumber} — credit for ${order.orderNumber}`,
+        referenceType: 'return', referenceId: returnDoc._id,
+        referenceNumber: returnDoc.returnNumber,
+        debit: 0, credit: returnDoc.returnValue,
+        narration: `Return ${returnDoc.returnNumber} — goods credit ₹${returnDoc.returnValue.toFixed(2)} for ${order.orderNumber}${cashRefundNote}`,
         userId: req.user._id,
       }, session);
     }
+
+    // 7. Mark return approved
+    returnDoc.refundMethod = refundMethod;
+    returnDoc.status = 'approved';
+    returnDoc.approvedAt = new Date();
+    returnDoc.approvedBy = req.user._id;
+    await returnDoc.save({ session });
+
     return returnDoc;
   });
-  res.status(201).json(new ApiResponse(201, returnDoc, 'Return processed'));
+  res.json(new ApiResponse(200, returnDoc, 'Return approved'));
 });
 
 const listReturns = asyncHandler(async (req, res) => {
-  const returns = await req.models.OrderReturn.find({ order: req.params.id });
+  const returns = await req.models.OrderReturn.find({ order: req.params.id })
+    .populate('items.product', 'name sku')
+    .populate('approvedBy', 'name');
   res.json(new ApiResponse(200, returns));
 });
 
@@ -522,7 +706,7 @@ const posOrder = asyncHandler(async (req, res) => {
 
 const getEditHistory = asyncHandler(async (req, res) => {
   const order = await req.models.Order.findById(req.params.id)
-    .select('editHistory statusHistory orderNumber')
+    .select('editHistory statusHistory orderNumber grandTotal')
     .populate('statusHistory.changedBy', 'name email');
   if (!order) throw new ApiError(404, 'Order not found');
 
@@ -538,10 +722,15 @@ const getEditHistory = asyncHandler(async (req, res) => {
       user: sh.changedBy,
     });
   });
-  (order.editHistory || []).forEach((eh) => {
+  (order.editHistory || []).forEach((eh, idx) => {
+    const fromTotal = eh.snapshot?.grandTotal;
+    // The 'to' value: the next snapshot's grandTotal, or the current order's grandTotal for the last edit
+    const toTotal = (order.editHistory[idx + 1]?.snapshot?.grandTotal) ?? order.grandTotal;
     timeline.push({
       type: 'edit',
       message: 'Order was edited',
+      fromTotal,
+      toTotal,
       date: eh.editedAt || eh.createdAt,
       user: eh.editedBy,
     });
@@ -554,5 +743,5 @@ const getEditHistory = asyncHandler(async (req, res) => {
 module.exports = {
   list, createOrder, getById, updateOrder, deleteOrder,
   updateStatus, recordPayment, listPayments,
-  initiateReturn, listReturns, getInvoice, posOrder, getEditHistory,
+  initiateReturn, approveReturn, listReturns, getInvoice, posOrder, getEditHistory,
 };

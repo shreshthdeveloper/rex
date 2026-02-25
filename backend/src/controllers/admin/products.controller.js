@@ -7,6 +7,7 @@ const list = asyncHandler(async (req, res) => {
   const { page, limit, type, category, search, warehouse, brand } = req.query;
   const { skip, limit: lim, page: pg } = paginate(page, limit);
   const filter = {};
+  const hasExplicitType = !!type;
   if (type) filter.type = type;
   if (category) filter.categories = category;
   if (brand) filter.brand = brand;
@@ -40,9 +41,12 @@ const list = asyncHandler(async (req, res) => {
       filter.$or.push({ _id: { $in: parentIdsFromVariants } });
     }
 
-    // When searching, allow all types so parent products found via variant search show up
-    delete filter.type;
-    filter.$and = [{ type: { $in: ['single', 'parent'] } }];
+    // When searching without explicit type, constrain to single/parent.
+    // When explicit type is provided (e.g. variant search), keep that type filter intact.
+    if (!hasExplicitType) {
+      delete filter.type;
+      filter.$and = [{ type: { $in: ['single', 'parent'] } }];
+    }
   }
 
   const [products, total] = await Promise.all([

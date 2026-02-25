@@ -144,6 +144,7 @@ export const ordersAPI = {
   getInvoice: (id) => api.get(`/admin/orders/${id}/invoice`, withToken('adminToken')),
   getHistory: (id) => api.get(`/admin/orders/${id}/history`, withToken('adminToken')),
   initiateReturn: (id, data) => api.post(`/admin/orders/${id}/returns`, data, withToken('adminToken')),
+  approveReturn: (orderId, returnId, refundMethod) => api.patch(`/admin/orders/${orderId}/returns/${returnId}/approve`, { refundMethod }, withToken('adminToken')),
   listReturns: (id) => api.get(`/admin/orders/${id}/returns`, withToken('adminToken')),
   posOrder: (data) => api.post('/admin/orders/pos', data, withToken('adminToken')),
 };

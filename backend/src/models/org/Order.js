@@ -68,6 +68,8 @@ const orderSchema = new mongoose.Schema(
     grandTotal: { type: Number, default: 0 },
     amountPaid: { type: Number, default: 0 },
     balanceDue: { type: Number, default: 0 },
+    sellReturn: { type: Number, default: 0 },
+    returnDue: { type: Number, default: 0 },
     paymentStatus: {
       type: String,
       enum: ['unpaid', 'partial', 'paid'],
@@ -83,7 +85,7 @@ const orderSchema = new mongoose.Schema(
     },
     orderSource: {
       type: String,
-      enum: ['walk_in', 'phone', 'online', 'marketplace', ''],
+      enum: ['walk_in', 'phone', 'online', 'marketplace', 'pos', 'website', ''],
       default: '',
     },
     invoiceNumber: { type: String, default: '' },
@@ -95,7 +97,6 @@ const orderSchema = new mongoose.Schema(
 );
 
 orderSchema.plugin(softDeletePlugin);
-orderSchema.index({ orderNumber: 1 });
 orderSchema.index({ customer: 1, createdAt: -1 });
 orderSchema.index({ status: 1 });
 

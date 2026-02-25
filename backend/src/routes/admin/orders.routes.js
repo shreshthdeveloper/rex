@@ -20,6 +20,7 @@ router.get('/:id/invoice', cashierPlus, ctrl.getInvoice);
 // Returns
 router.post('/:id/returns', managerPlus, ctrl.initiateReturn);
 router.get('/:id/returns', cashierPlus, ctrl.listReturns);
+router.patch('/:id/returns/:returnId/approve', managerPlus, ctrl.approveReturn);
 
 // POS
 router.post('/pos', cashierPlus, ctrl.posOrder);

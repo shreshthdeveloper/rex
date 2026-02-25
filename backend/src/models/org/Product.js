@@ -40,7 +40,6 @@ const productSchema = new mongoose.Schema(
 );
 
 productSchema.plugin(softDeletePlugin);
-productSchema.index({ sku: 1 });
 productSchema.index({ parentProduct: 1 });
 productSchema.index({ categories: 1 });
 productSchema.index({ barcodeValue: 1 });

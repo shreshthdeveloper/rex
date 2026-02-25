@@ -3,9 +3,8 @@
  *
  * Props:
  *   warehouseId  {string}   Optional. When provided, stock quantity is shown in dropdown rows.
- *   onSelect     {Function} Called with an array of { product, currentStock } objects.
- *                           Single/variant products → array with 1 item.
- *                           Parent product selected  → array of ALL its variants.
+ *   onSelect     {Function} Called with an array of { product, currentStock, reserved } objects.
+ *                           Single/variant → 1 item. Parent → opens variant-picker modal first.
  *   placeholder  {string}   Input placeholder text.
  *   label        {string}   Optional field label rendered above the input.
  *   className    {string}   Extra wrapper classes.
@@ -15,6 +14,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Search, Package, Loader2, Tag, Layers, AlertCircle } from 'lucide-react';
 import { productsAPI, stockAPI } from '../api';
+import { Modal, Button } from './ui';
 
 export default function ProductSearch({
   warehouseId,
@@ -29,8 +29,11 @@ export default function ProductSearch({
   const [searching, setSearching] = useState(false);
   const [open, setOpen] = useState(false);
   const [fetchingVariants, setFetchingVariants] = useState(null); // productId being fetched
-  const [stockMap, setStockMap] = useState({}); // productId -> { quantity, reservedQuantity }
+  const [stockMap, setStockMap] = useState({}); // productId -> { total, reserved, available }
   const [stockLoading, setStockLoading] = useState(false);
+  // Variant picker modal (for parent products)
+  const [variantModal, setVariantModal] = useState(null); // { product, variants, stocks }
+  const [selectedVariants, setSelectedVariants] = useState({});
   const wrapperRef = useRef(null);
   const inputRef = useRef(null);
   const debounceRef = useRef(null);
@@ -60,7 +63,11 @@ export default function ProductSearch({
         const map = {};
         (res.data?.stocks || []).forEach((s) => {
           const id = s.product?._id || s.product;
-          if (id) map[id] = { quantity: s.quantity ?? 0, reserved: s.reservedQuantity ?? 0 };
+          if (id) {
+            const total = Number(s.quantity ?? 0);
+            const reserved = Number(s.reservedQuantity ?? s.reserved ?? 0);
+            map[id] = { total, reserved, available: total - reserved };
+          }
         });
         setStockMap(map);
       } catch {
@@ -86,9 +93,18 @@ export default function ProductSearch({
     debounceRef.current = setTimeout(async () => {
       setSearching(true);
       try {
-        // Search all types including variants explicitly
-        const res = await productsAPI.list({ search: q, limit: 10 });
-        setResults(res.data?.products || []);
+        // Run parallel search: single/parent + variants
+        const requests = [
+          productsAPI.list({ search: q, limit: 10 }),
+          productsAPI.list({ search: q, type: 'variant', limit: 10 }),
+        ];
+        const responses = await Promise.all(requests);
+        const base = responses[0].data?.products || [];
+        const variantResults = responses[1]?.data?.products || [];
+        // Deduplicate (variant may also appear as child of a returned parent)
+        const seen = new Set(base.map((p) => p._id));
+        const extra = variantResults.filter((p) => !seen.has(p._id));
+        setResults([...base, ...extra]);
         setOpen(true);
       } catch {
         setResults([]);
@@ -108,57 +124,72 @@ export default function ProductSearch({
       setOpen(false);
 
       if (product.type === 'parent') {
+        // Open variant picker modal
         setFetchingVariants(product._id);
         try {
           const res = await productsAPI.get(product._id);
           const variants = res.data?.variants || [];
+          const stocks = res.data?.stocks || [];
           if (variants.length > 0) {
-            onSelect(
-              variants.map((v) => ({
-                product: v,
-                currentStock: stockMap[v._id]?.quantity ?? 0,
-                reserved: stockMap[v._id]?.reserved ?? 0,
-              }))
-            );
+            setVariantModal({ product, variants, stocks });
+            setSelectedVariants({});
           } else {
-            // Parent with no variants — add the parent itself
-            onSelect([
-              {
-                product,
-                currentStock: stockMap[product._id]?.quantity ?? 0,
-                reserved: stockMap[product._id]?.reserved ?? 0,
-              },
-            ]);
+            // Parent with no variants — add the parent itself directly
+            onSelect([{
+              product,
+              currentStock: stockMap[product._id]?.total ?? 0,
+              reserved: stockMap[product._id]?.reserved ?? 0,
+            }]);
           }
         } catch {
-          onSelect([
-            {
-              product,
-              currentStock: stockMap[product._id]?.quantity ?? 0,
-              reserved: stockMap[product._id]?.reserved ?? 0,
-            },
-          ]);
+          onSelect([{
+            product,
+            currentStock: stockMap[product._id]?.total ?? 0,
+            reserved: stockMap[product._id]?.reserved ?? 0,
+          }]);
         } finally {
           setFetchingVariants(null);
         }
       } else {
-        onSelect([
-          {
-            product,
-            currentStock: stockMap[product._id]?.quantity ?? 0,
-            reserved: stockMap[product._id]?.reserved ?? 0,
-          },
-        ]);
+        onSelect([{
+          product,
+          currentStock: stockMap[product._id]?.total ?? 0,
+          reserved: stockMap[product._id]?.reserved ?? 0,
+        }]);
       }
     },
     [onSelect, stockMap]
   );
 
+  /* ── Confirm variant picker ── */
+  const handleVariantAdd = useCallback(() => {
+    if (!variantModal) return;
+    const chosen = variantModal.variants.filter((v) => selectedVariants[v._id]);
+    if (!chosen.length) return;
+    onSelect(
+      chosen.map((v) => {
+        const vStocks = variantModal.stocks?.filter(
+          (s) => String(s.product?._id || s.product) === String(v._id)
+        );
+        const whStock = warehouseId
+          ? vStocks?.find((s) => String(s.warehouse?._id || s.warehouse) === String(warehouseId))?.quantity
+          : null;
+        return {
+          product: v,
+          currentStock: whStock ?? stockMap[v._id]?.total ?? 0,
+          reserved: stockMap[v._id]?.reserved ?? 0,
+        };
+      })
+    );
+    setVariantModal(null);
+    setSelectedVariants({});
+  }, [variantModal, selectedVariants, onSelect, warehouseId, stockMap]);
+
   /* ── Helpers ── */
   const getAvailable = (productId) => {
     const s = stockMap[productId];
     if (!s) return null;
-    return s.quantity - s.reserved;
+    return s.available;
   };
 
   const typeColor = {
@@ -219,6 +250,7 @@ export default function ProductSearch({
             <ul className="max-h-72 overflow-y-auto divide-y divide-gray-50">
               {results.map((product) => {
                 const available = getAvailable(product._id);
+                const stock = stockMap[product._id] || null;
                 const isParent = product.type === 'parent';
                 return (
                   <li key={product._id}>
@@ -262,7 +294,7 @@ export default function ProductSearch({
                           </span>
                           {isParent && (
                             <span className="text-[10px] text-violet-500 italic">
-                              → adds all variants
+                              → pick variants
                             </span>
                           )}
                         </div>
@@ -281,7 +313,7 @@ export default function ProductSearch({
                                   : 'text-emerald-600'
                               }`}
                             >
-                              Stock: {available}
+                              Total: {stock?.total ?? 0} • Reserved: {stock?.reserved ?? 0} • Available: {available}
                             </span>
                           )}
                           {warehouseId && available === null && (
@@ -304,6 +336,93 @@ export default function ProductSearch({
           )}
         </div>
       )}
+
+      {/* ── Variant Picker Modal ── */}
+      <Modal
+        open={!!variantModal}
+        onClose={() => { setVariantModal(null); setSelectedVariants({}); }}
+        title="Select Variants"
+        size="lg"
+      >
+        {variantModal && (
+          <div>
+            <p className="text-sm text-slate-500 mb-4">
+              {variantModal.product.name} — {variantModal.variants.length} variant{variantModal.variants.length !== 1 ? 's' : ''} available
+            </p>
+            <div className="flex gap-3 mb-4">
+              <button
+                type="button"
+                onClick={() => setSelectedVariants(variantModal.variants.reduce((a, v) => ({ ...a, [v._id]: true }), {}))}
+                className="text-sm text-violet-600 hover:underline font-medium"
+              >
+                Select All
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedVariants({})}
+                className="text-sm text-slate-500 hover:underline font-medium"
+              >
+                Deselect All
+              </button>
+            </div>
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-200 text-slate-500 text-xs uppercase">
+                  <th className="py-2 text-left w-10"></th>
+                  <th className="py-2 text-left">Variant</th>
+                  <th className="py-2 text-left">SKU</th>
+                  <th className="py-2 text-right">Price</th>
+                </tr>
+              </thead>
+              <tbody>
+                {variantModal.variants.map((v) => {
+                  const vStocks = variantModal.stocks?.filter(
+                    (s) => String(s.product?._id || s.product) === String(v._id)
+                  );
+                  const whStockDoc = warehouseId
+                    ? vStocks?.find((s) => String(s.warehouse?._id || s.warehouse) === String(warehouseId))
+                    : null;
+                  const whTotal = Number(whStockDoc?.quantity ?? stockMap[v._id]?.total ?? 0);
+                  const whReserved = Number(whStockDoc?.reservedQuantity ?? whStockDoc?.reserved ?? stockMap[v._id]?.reserved ?? 0);
+                  const whAvailable = whTotal - whReserved;
+                  return (
+                    <tr
+                      key={v._id}
+                      className="border-b border-gray-50 hover:bg-violet-50/50 cursor-pointer"
+                      onClick={() => setSelectedVariants((prev) => ({ ...prev, [v._id]: !prev[v._id] }))}
+                    >
+                      <td className="py-3">
+                        <input
+                          type="checkbox"
+                          checked={!!selectedVariants[v._id]}
+                          onChange={() => {}}
+                          className="w-4 h-4 rounded border-gray-300 text-violet-600 focus:ring-violet-500"
+                        />
+                      </td>
+                      <td className="py-3">
+                        <span className="text-slate-800 font-medium">{v.variantValue || v.name}</span>
+                        {warehouseId && (
+                          <span className="text-xs text-slate-500 ml-2">Total: {whTotal} • Reserved: {whReserved} • Available: <span className={`${whAvailable <= 0 ? 'text-red-500' : whAvailable < 10 ? 'text-amber-500' : 'text-emerald-600'}`}>{whAvailable}</span></span>
+                        )}
+                      </td>
+                      <td className="py-3 font-mono text-xs text-gray-500">{v.sku}</td>
+                      <td className="py-3 text-right font-medium text-slate-800">
+                        {v.basePrice ? `₹${v.basePrice}` : '—'}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            <div className="flex justify-end gap-3 mt-6">
+              <Button variant="ghost" onClick={() => { setVariantModal(null); setSelectedVariants({}); }}>Cancel</Button>
+              <Button onClick={handleVariantAdd} disabled={!Object.values(selectedVariants).some(Boolean)}>
+                Add {Object.values(selectedVariants).filter(Boolean).length} Variant{Object.values(selectedVariants).filter(Boolean).length !== 1 ? 's' : ''}
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }

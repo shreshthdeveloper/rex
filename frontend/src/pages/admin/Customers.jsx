@@ -85,6 +85,7 @@ export default function Customers() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailData, setDetailData] = useState([]);
   const [balanceData, setBalanceData] = useState(null);
+  const [liveBalance, setLiveBalance] = useState(null);
 
   // Topup / Adjust forms
   const [topupForm, setTopupForm] = useState(emptyTopup);
@@ -175,14 +176,23 @@ export default function Customers() {
   };
 
   /* ───── DETAIL MODAL ───── */
+  const refreshLiveBalance = async (id) => {
+    try {
+      const res = await customersAPI.getBalance(id);
+      setLiveBalance(res.data?.currentBalance ?? res.data?.balance ?? null);
+    } catch { /* non-critical */ }
+  };
+
   const openDetail = async (c) => {
     setDetailCustomer(c);
     setDetailTab('ledger');
     setTopupForm(emptyTopup);
     setAdjustForm(emptyAdjust);
+    setLiveBalance(null);
     fetchDetailTab('ledger', c._id);
+    refreshLiveBalance(c._id);
   };
-  const closeDetail = () => { setDetailCustomer(null); setDetailData([]); setBalanceData(null); };
+  const closeDetail = () => { setDetailCustomer(null); setDetailData([]); setBalanceData(null); setLiveBalance(null); };
 
   const fetchDetailTab = useCallback(async (tab, id) => {
     const cid = id || detailCustomer?._id;
@@ -193,7 +203,7 @@ export default function Customers() {
     try {
       let res;
       switch (tab) {
-        case 'ledger':    res = await customersAPI.getLedger(cid);    setDetailData(res.data?.entries || []); break;
+        case 'ledger':    res = await customersAPI.getLedger(cid, { limit: 200 });    setDetailData(res.data?.entries || []); break;
         case 'balance':   res = await customersAPI.getBalance(cid);  setBalanceData(res.data || res); break;
         case 'statement': res = await customersAPI.getStatement(cid); setDetailData(res.data?.entries || []); break;
         case 'orders':    res = await customersAPI.getOrders(cid);   setDetailData(res.data?.orders || []); break;
@@ -228,6 +238,7 @@ export default function Customers() {
       setTopupForm(emptyTopup);
       fetchDetailTab('ledger', detailCustomer._id);
       setDetailTab('ledger');
+      refreshLiveBalance(detailCustomer._id);
       fetchCustomers();
     } catch (err) {
       toast.error(err.message || 'Failed to record topup');
@@ -251,6 +262,7 @@ export default function Customers() {
       setAdjustForm(emptyAdjust);
       fetchDetailTab('ledger', detailCustomer._id);
       setDetailTab('ledger');
+      refreshLiveBalance(detailCustomer._id);
       fetchCustomers();
     } catch (err) {
       toast.error(err.message || 'Failed to record adjustment');
@@ -568,8 +580,8 @@ export default function Customers() {
               <Badge color={detailCustomer.isActive !== false ? 'green' : 'red'}>{detailCustomer.isActive !== false ? 'Active' : 'Inactive'}</Badge>
               <div className="ml-auto text-right">
                 <p className="text-xs text-slate-500">Balance</p>
-                <p className={`text-lg font-bold ${Number(detailCustomer.currentBalance) > 0 ? 'text-red-400' : Number(detailCustomer.currentBalance) < 0 ? 'text-emerald-400' : 'text-slate-800'}`}>
-                  {fmtCurrency(detailCustomer.currentBalance)}
+                <p className={`text-lg font-bold ${Number(liveBalance ?? detailCustomer.currentBalance) > 0 ? 'text-red-400' : Number(liveBalance ?? detailCustomer.currentBalance) < 0 ? 'text-emerald-400' : 'text-slate-800'}`}>
+                  {fmtCurrency(liveBalance ?? detailCustomer.currentBalance)}
                 </p>
               </div>
             </div>

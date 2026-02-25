@@ -77,3 +77,189 @@ Added a stock table for parent products in the view modal. Table shows variants 
 ## 2026-02-25 — Stock table tooltips + reserved field bug fix
 Added `title` tooltips to every cell in the variant×warehouse stock matrix (Qty · Reserved · Available per cell, per variant row total, per warehouse column total, and grand total corner). Fixed field-name inconsistency: raw `ProductStock` docs from the API use `reservedQuantity`, not `reserved` — all stock table reads in the view modal now use `s?.reservedQuantity ?? s?.reserved ?? 0` uniformly. Grand total footer only renders the reserved line when non-zero.
 **Files:** `frontend/src/pages/admin/Products.jsx`
+
+
+## 2026-02-25 - ProductSearch enhancements + Orders refactor
+Variants now appear in ProductSearch dropdown when query >= 3 chars. Parent click opens variant picker modal instead of auto-adding all variants. Orders.jsx inline search removed and replaced with ProductSearch component.
+
+**Files:** frontend/src/components/ProductSearch.jsx, frontend/src/pages/admin/Orders.jsx
+
+
+## 2026-02-25 - Order history change details, Ship action, Payments modal, saleType/orderSource fix, ledger timing fix
+1. History tab now shows grand total change for each edit entry (from/to) by comparing consecutive editHistory snapshots.
+2. Shipping transition removed from Status tab; dedicated Truck icon button added to list for processing orders, opens ship confirmation modal with address and status flow.
+3. Payments tab removed from detail modal; CreditCard icon in list opens standalone Payments modal with full payment list + record payment form.
+4. saleType/orderSource/referenceNumber now saved on order edit (backend extracted them from req.body). POS and Website added to orderSource options in model enum and frontend Select.
+5. Ledger invoice now posted at processing status (not at placement/draft). Edit while in processing creates debit_note (increase) or credit_note (decrease). Cancel/delete credit-note only fires if order was previously invoiced (processing+).
+
+**Files:** backend/src/controllers/admin/orders.controller.js, backend/src/models/org/Order.js, frontend/src/pages/admin/Orders.jsx
+
+
+## 2026-02-25 - Order history change details, Ship action, Payments modal, saleType/orderSource fix, ledger timing fix
+1. History tab now shows grand total change for each edit entry (from/to) by comparing consecutive editHistory snapshots.
+2. Status tab removed from view modal; dedicated Truck icon button added to list for all advanceable orders, opens ship/status confirmation modal.
+3. Payments tab removed from view modal; CreditCard icon in list opens standalone Payments modal with full payment list + record payment form. Add Payment only shown for processing+ orders.
+4. saleType/orderSource/referenceNumber now saved on order edit (backend extracted them from req.body). POS and Website added to orderSource options in model enum and frontend Select. saleType/orderSource/referenceNumber shown in Details tab.
+5. Ledger invoice now posted at processing status (not at placement). Edit while in processing creates debit_note (increase) or credit_note (decrease). Cancel/delete credit-note only fires if order was previously invoiced (processing+).
+
+**Files:** backend/src/controllers/admin/orders.controller.js, backend/src/models/org/Order.js, frontend/src/pages/admin/Orders.jsx
+
+
+## 2026-02-25 - Orders: 6 fixes
+1. History tab shows grand total changes (from/to) for edits
+2. Status tab removed from view modal, Truck icon in orders list for status actions
+3. Payments extracted to standalone modal, CreditCard icon in list for processing+ orders
+4. saleType/orderSource/referenceNumber saving/loading fixed, POS/Website options added
+5. Ledger timing fixed: invoice posts at processing (not placement), adjustments on edits
+6. Payment recording restricted to processing+ status, no ledger entries on order creation
+
+**Files:** backend/src/controllers/admin/orders.controller.js, backend/src/models/org/Order.js, frontend/src/pages/admin/Orders.jsx
+
+
+## 2026-02-25 - Customer balance header fix, stock reservation timing, payment cap, invoice refresh
+
+1. Customer modal header balance now shows live value (fresh API fetch on modal open + after topup/adjust), not stale list data.
+2. Stock reservation moved: `reserveStock` now runs when order status → `shipped` (not at order creation). `deductOnShipment` runs at `delivered`. `releaseReserved` on cancel only if order was in shipped/in_transit/out_for_delivery/failed_delivery. `updateOrder` no longer manipulates reserved stock.
+3. Payment recording capped: backend rejects amount > balanceDue; frontend shows max in label and validates before API call.
+4. Invoice tab auto-refreshes after payment is recorded via the standalone Payments modal (if detail modal is open on the invoice tab for the same order).
+
+**Files:** frontend/src/pages/admin/Customers.jsx, frontend/src/pages/admin/Orders.jsx, backend/src/controllers/admin/orders.controller.js
+
+
+## 2026-02-25 11:25 - Legacy cleanup after orders/customer refactor
+
+1. Removed deprecated detail-modal payment/status legacy flow from Orders page (`detailPayments/detailReturns` state, `handleRecordPayment`, old payments/status render blocks, and old tab fetch branch for `payments`).
+2. Simplified detail modal refresh logic to only keep active tabs (`returns`, `invoice`, `history`) and current modal-based status/payment actions.
+3. Updated outdated stock service comments to match current lifecycle: reserve on shipped-flow, deduct on delivery, release on cancel/failure.
+
+**Files:** frontend/src/pages/admin/Orders.jsx, backend/src/services/stockService.js
+
+
+## 2026-02-25 12:05 - ProductSearch stock visibility + return/refund accounting overhaul
+
+1. ProductSearch now includes individual variants in search results consistently and shows stock split as Total, Reserved, and Available.
+2. Create/Edit Order line-items table now has an explicit Available Qty column per item (warehouse-aware).
+3. Return UI fixed: returned items render correct product + `returnQty` (no more `Item xundefined`), and table now shows both Return Value and Refund.
+4. Return valuation now uses original sale unit price × returned quantity per line item, stored in return rows (`unitPrice`, `lineAmount`) and return header (`returnValue`).
+5. Refund eligibility is computed server-side using payment/due logic across cumulative returns:
+	- Return value always reduces receivable via customer ledger `credit_note`.
+	- Refund amount is only the overpaid part after due adjustment (never more than paid amount, and net of previously recorded refunds).
+6. Order financial state is recalculated after returns (`balanceDue`, `paymentStatus`) and return stock is restored with proper stock-movement reference linkage.
+7. Product list search API fixed to respect explicit `type` filters during search (variant search now returns variants correctly).
+
+**Files:** frontend/src/components/ProductSearch.jsx, frontend/src/pages/admin/Orders.jsx, backend/src/controllers/admin/orders.controller.js, backend/src/controllers/admin/products.controller.js, backend/src/models/org/OrderReturn.js
+
+---
+
+## 2026-02-25 14:00 - Fix stock reservation error message + stockCache invalidation
+
+**Root cause of user confusion:** When `reserveStock` throws (no `ProductStock` record for that product+warehouse — opening stock was never configured), the `withTransaction` aborts the whole block, so the status does NOT actually change to `shipped`. The user likely dismissed the brief `toast.error` without reading it, then saw the order in an unchanged state and concluded "shipped but not reserved."
+
+**Fixes:**
+1. `reserveStock` error message sharpened to: "No stock record found for this product in the selected warehouse. Please set opening stock first." — makes the action clear.
+2. `deductOnShipment` error message similarly sharpened.
+3. `handleStatusModalAction` in `Orders.jsx` now deletes affected productIds from `stockCache` after a successful status update, so the Available Qty column re-fetches fresh reserved counts immediately.
+
+**Files:** backend/src/services/stockService.js, frontend/src/pages/admin/Orders.jsx
+
+---
+
+## 2026-02-25 15:30 - Fix race condition in updateStatus & manually repair ORD-00020 reservation
+
+**Root cause (investigated via Atlas DB queries and isolation test):** `reserveStock` and session-based saves both work correctly (confirmed with a live script against Atlas). The issue was architectural: `order` was fetched **outside** the transaction with `findById`, then re-saved **inside** the transaction. A concurrent delivery of another order could race between these two steps, resetting `reservedQuantity` to 0 just before or after the commit. Because the saves weren't fully atomic with the order read, stock mutations could be undone by an overlapping transaction.
+
+**Fixes:**
+1. `updateStatus` now re-fetches the order **inside** `withTransaction` using `.session(session)` — the order read and all stock mutations are now within the same snapshot boundary. Also re-validates the transition inside the transaction to guard against race conditions changing the order status between the outer check and the inner write.
+2. Replaced the dangling `order` reference with `savedOrder` in the response so the returned document reflects the actual final state.
+3. Manually corrected ORD-00020's `ProductStock.reservedQuantity` from 0 → 10 via a one-time fix script (the order is legitimately shipped with 10 iPhone units at Main Warehouse).
+
+**Files:** backend/src/controllers/admin/orders.controller.js
+
+---
+
+## 2026-02-25 17:00 - Complete return flow overhaul (two-phase pending → approved)
+
+Rewrote the entire return system to match proper accounting and ERP-grade patterns:
+
+**What changed:**
+- **Order model**: Added `sellReturn` (cumulative returned value) and `returnDue` (what we owe customer back) fields.
+- **OrderReturn model**: Removed `refundMethod`, changed status enum from `['initiated','approved','completed']` to `['pending','approved']`, added `approvedAt`/`approvedBy` fields.
+- **Stock service**: Added `receiveReturnStock` (pending: qty + reserved both increase, available unchanged — quarantine) and `releaseReturnStock` (approved: reserved decreases, available increases).
+- **initiateReturn**: Now only creates a pending return, quarantines stock, no ledger entries, no financial changes.
+- **approveReturn** (new): Single function that handles all side-effects — releases quarantined stock, updates line item statuses, recalculates `sellReturn`/`balanceDue`/`returnDue` with the core formula (`effectiveOwed = grandTotal - sellReturn`), posts credit_note ledger entry, updates order status.
+- **Frontend**: Added `Sell Return` and `Return Due` columns to orders table, approve button (CheckCircle) on pending returns, updated detail view summary.
+- **Removed**: All legacy `refundMethod` handling, auto-approve logic, inline `require()` for stockService, incorrect tax-exclusive return value calculation (now uses proportional `lineTotal` which is tax-inclusive).
+
+**Ledger accounting:** On approval, a single `credit_note` (credit) is posted for the return value, reducing the customer's receivable. The running ledger balance naturally reflects overpayments.
+
+**Files:** backend/src/models/org/Order.js, backend/src/models/org/OrderReturn.js, backend/src/services/stockService.js, backend/src/controllers/admin/orders.controller.js, backend/src/routes/admin/orders.routes.js, frontend/src/api.js, frontend/src/pages/admin/Orders.jsx
+
+---
+
+## 2025-07-25 — Return flow: refundMethod re-added + E2E test suite
+
+### refundMethod restored to approval flow
+`refundMethod` was added back as an optional schema field (enum of 6 values: cash, bank_transfer, card, online, wallet, ledger_credit). Approval is blocked server-side if the field is missing or invalid. The UI shows an inline select per pending return row; the approve button is visually disabled until a method is selected. Schema-level `required` is intentionally absent — the manual check in `approveReturn` is the enforcement gate (so that `initiateReturn` can save the pending document without a method).
+
+**Files:** backend/src/models/org/OrderReturn.js, backend/src/controllers/admin/orders.controller.js, frontend/src/api.js, frontend/src/pages/admin/Orders.jsx
+
+### StockMovement enum extended
+`return_in_pending` and `return_in_approved` movement types added to the `StockMovement.movementType` enum to match the values written by `stockService.receiveReturnStock` and `stockService.releaseReturnStock`.
+
+**Files:** backend/src/models/org/StockMovement.js
+
+### E2E test suite for return flow (95/95 passing)
+Created `backend/tests/returns_e2e.js` — a standalone Node.js test script covering all return cases:
+- Case 1a: No payment, both items returned → sellReturn=grandTotal, balanceDue=0, returnDue=0
+- Case 1b: No payment, item B returned → sellReturn=ltB, balanceDue=ltA, returnDue=0
+- Case 2a: Payment=300, item B returned → balanceDue=ltA-300, returnDue=0
+- Case 2b: Payment=300, item A returned → balanceDue=ltB-300, returnDue=0
+- Case 3a: Payment=700, item B returned → balanceDue=0, returnDue=70
+- Case 3b: Payment=700, item A returned → balanceDue=0, returnDue=280
+- Case 4: No payment, all returned → sellReturn=grandTotal, due=0, returnDue=0
+- Case 5: Full payment, all returned → returnDue=amountPaid, ledger invoice+payment+credit_note verified
+- Guard: Approve without/with-invalid refundMethod → 400
+Also verifies: stock quarantine on initiate (qty+1, reserved+1, available unchanged), stock release on approve (reserved restored), and ledger entries (invoice, payment, credit_note).
+
+**Files:** backend/tests/returns_e2e.js
+
+---
+
+## 2026-02-25 15:45 - Fix customer ledger not showing recent entries + legacy cleanup
+
+### Bug fix: ledger entries invisible after new orders/returns
+**Root cause:** `getLedger` was sorting `createdAt: 1` (oldest-first) with a default limit of 20. Any customer with more than 20 historical ledger entries would show only the oldest 20 — new invoice and credit_note entries from recent orders/returns were silently on a later page never visible in the modal.
+
+**Fixes:**
+1. Backend `getLedger`: changed `sort({ createdAt: 1 })` → `sort({ createdAt: -1 })` so the most recent entries appear first in every response.
+2. Frontend `Customers.jsx`: passes `{ limit: 200 }` to the ledger API call so up to 200 entries are loaded into the modal, giving full visibility of recent activity without requiring pagination.
+
+### Legacy cleanup
+- `docs/return_function.md` (stale planning doc from pre-overhaul that described the old `updateStock 'return_in'` approach — superseded by `receiveReturnStock`/`releaseReturnStock`) — already removed.
+- Confirmed no other deprecated return-related code remains in backend controllers, models, or frontend after the two-phase overhaul.
+
+**Files:** backend/src/controllers/admin/customers.controller.js, frontend/src/pages/admin/Customers.jsx
+
+---
+
+## 2026-02-25 16:35 - Fix misleading credit_note narration (goods credit vs cash refund) + duplicate index cleanup
+
+### Accounting logic fix: credit_note narration
+**The flaw:** When approving a return, the `credit_note` ledger entry had narration `"₹3540.00 refund via cash for ORD-00073"`. This implied 3,540 in cash was returned to the customer. In reality:
+- The **credit_note of 3,540** is a *goods return credit* — it reduces the accounts receivable (reverses part of the original sale). This is correct double-entry: Dr. Sales Returns 3,540 / Cr. AR 3,540
+- The **actual cash refund owed** (returnDue) was only *1,460* (amountPaid 5,000 − effectiveOwed 3,540)
+- The running ledger balance going from +2,080 to −1,460 correctly shows we owe the customer 1,460
+
+The narration was mixing up "goods credit value" with "cash refund" — causing the business owner to think 3,540 was physically handed over.
+
+**Fix:** Narration now clearly distinguishes both:
+- No-overpayment case: `"Return RTN-xxx — goods credit ₹X for ORD-xxx | no cash refund (balance still due)"`
+- Overpayment case: `"Return RTN-xxx — goods credit ₹X for ORD-xxx | cash refund ₹Y due via cash"`
+
+E2E test updated to assert narration contains `"goods credit"` and, for overpaid case, the correct cash refund amount.
+
+### Legacy cleanup: duplicate Mongoose schema index warnings
+Removed duplicate `schema.index()` calls on fields that already declare `unique: true` (which auto-creates an index). Affected fields: `Customer.email`, `Order.orderNumber`, `Product.sku`. All other composite/query indexes retained.
+
+**Files:** backend/src/controllers/admin/orders.controller.js, backend/tests/returns_e2e.js, backend/src/models/org/Customer.js, backend/src/models/org/Order.js, backend/src/models/org/Product.js
+
