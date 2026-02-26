@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import toast from 'react-hot-toast';
+import { useAuth } from './AuthContext';
 
 const WishlistContext = createContext(null);
 export const useWishlist = () => useContext(WishlistContext);
@@ -11,9 +12,15 @@ function load() {
 }
 
 export function WishlistProvider({ children }) {
+  const { isAuthenticated } = useAuth();
   const [items, setItems] = useState(load);
 
   useEffect(() => { localStorage.setItem(STORAGE_KEY, JSON.stringify(items)); }, [items]);
+
+  // Clear wishlist completely on logout
+  useEffect(() => {
+    if (!isAuthenticated) setItems([]);
+  }, [isAuthenticated]);
 
   const toggle = useCallback((product) => {
     setItems((prev) => {

@@ -1,4 +1,6 @@
+import { useState, useEffect } from 'react';
 import { Sparkles, ShieldCheck, Truck, Store, Layers } from 'lucide-react';
+import { catalogService } from '../services/catalogService';
 
 const highlights = [
   {
@@ -24,14 +26,30 @@ const highlights = [
 ];
 
 export default function AboutUsPage() {
+  const [aboutContent, setAboutContent] = useState(null);
+
+  useEffect(() => {
+    catalogService.getSettings()
+      .then((s) => { if (s?.aboutUsContent) setAboutContent(s.aboutUsContent); })
+      .catch(() => {});
+  }, []);
+
   return (
     <div className="container-main py-10 sm:py-14">
       <section className="rounded-2xl border p-6 sm:p-10 mb-8" style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-surface-secondary)' }}>
         <div className="badge-brand mb-3 inline-flex items-center gap-1.5"><Sparkles className="w-3.5 h-3.5" /> Our Story</div>
         <h1 className="text-3xl sm:text-5xl font-bold leading-tight mb-4">About Us</h1>
-        <p className="text-sm sm:text-base max-w-3xl" style={{ color: 'var(--color-content-secondary)' }}>
-          At Phantom Distro Inc., we bring Southern hospitality to wholesale. With over a decade of combined experience in wholesale and international supply chains, we connect retailers to sought-after brands — including products that are otherwise hard to source. We build trusted relationships with manufacturers and distributors to offer competitive pricing and reliable availability.
-        </p>
+        {aboutContent ? (
+          <div
+            className="text-sm sm:text-base leading-relaxed [&_p]:mb-2 [&_h2]:text-xl [&_h2]:font-semibold [&_h2]:mt-3 [&_ul]:list-disc [&_ul]:pl-5 [&_li]:mb-1"
+            style={{ color: 'var(--color-content-secondary)' }}
+            dangerouslySetInnerHTML={{ __html: aboutContent }}
+          />
+        ) : (
+          <p className="text-sm sm:text-base max-w-3xl" style={{ color: 'var(--color-content-secondary)' }}>
+            At Phantom Distro Inc., we bring Southern hospitality to wholesale. With over a decade of combined experience in wholesale and international supply chains, we connect retailers to sought-after brands — including products that are otherwise hard to source. We build trusted relationships with manufacturers and distributors to offer competitive pricing and reliable availability.
+          </p>
+        )}
       </section>
 
       <section className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-5 mb-8">
@@ -55,3 +73,4 @@ export default function AboutUsPage() {
     </div>
   );
 }
+

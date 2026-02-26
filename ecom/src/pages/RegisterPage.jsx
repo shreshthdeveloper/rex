@@ -12,11 +12,14 @@ export default function RegisterPage() {
   const [loading, setLoading] = useState(false);
   const [settings, setSettings] = useState(null);
 
+  // Redirect authenticated users (via useEffect, not during render)
+  useEffect(() => {
+    if (isAuthenticated) navigate('/account', { replace: true });
+  }, [isAuthenticated, navigate]);
+
   useEffect(() => {
     catalogService.getSettings().then(setSettings).catch(() => {});
   }, []);
-
-  if (isAuthenticated) { navigate('/account', { replace: true }); return null; }
 
   const handleSubmit = async (e) => {
     e.preventDefault();

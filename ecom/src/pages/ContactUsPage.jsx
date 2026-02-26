@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Mail, Phone, User, MessageSquareText, Send, MapPin } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { catalogService } from '../services/catalogService';
@@ -14,6 +14,13 @@ const initialForm = {
 export default function ContactUsPage() {
   const [form, setForm] = useState(initialForm);
   const [loading, setLoading] = useState(false);
+  const [contactContent, setContactContent] = useState(null);
+
+  useEffect(() => {
+    catalogService.getSettings()
+      .then((s) => { if (s?.contactContent) setContactContent(s.contactContent); })
+      .catch(() => {});
+  }, []);
 
   const onChange = (key, value) => setForm((prev) => ({ ...prev, [key]: value }));
 
@@ -45,29 +52,37 @@ export default function ContactUsPage() {
             Share your requirements, order issues, or partnership queries. Our team will get back to you soon.
           </p>
 
-          <div className="space-y-4 text-sm">
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'var(--color-brand-light)' }}><Mail className="w-4 h-4" style={{ color: 'var(--color-brand)' }} /></div>
-              <div>
-                <div className="font-medium">Email</div>
-                <div style={{ color: 'var(--color-content-secondary)' }}>phantomdistroinc@gmail.com</div>
+          {contactContent ? (
+            <div
+              className="text-sm leading-relaxed [&_p]:mb-2 [&_strong]:font-semibold [&_ul]:list-disc [&_ul]:pl-4 [&_li]:mb-1"
+              style={{ color: 'var(--color-content-secondary)' }}
+              dangerouslySetInnerHTML={{ __html: contactContent }}
+            />
+          ) : (
+            <div className="space-y-4 text-sm">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'var(--color-brand-light)' }}><Mail className="w-4 h-4" style={{ color: 'var(--color-brand)' }} /></div>
+                <div>
+                  <div className="font-medium">Email</div>
+                  <div style={{ color: 'var(--color-content-secondary)' }}>phantomdistroinc@gmail.com</div>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'var(--color-brand-light)' }}><Phone className="w-4 h-4" style={{ color: 'var(--color-brand)' }} /></div>
+                <div>
+                  <div className="font-medium">Phone</div>
+                  <div style={{ color: 'var(--color-content-secondary)' }}>17863092055</div>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'var(--color-brand-light)' }}><MapPin className="w-4 h-4" style={{ color: 'var(--color-brand)' }} /></div>
+                <div>
+                  <div className="font-medium">Office</div>
+                  <div style={{ color: 'var(--color-content-secondary)' }}>Wholesale Support Desk</div>
+                </div>
               </div>
             </div>
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'var(--color-brand-light)' }}><Phone className="w-4 h-4" style={{ color: 'var(--color-brand)' }} /></div>
-              <div>
-                <div className="font-medium">Phone</div>
-                <div style={{ color: 'var(--color-content-secondary)' }}>17863092055</div>
-              </div>
-            </div>
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'var(--color-brand-light)' }}><MapPin className="w-4 h-4" style={{ color: 'var(--color-brand)' }} /></div>
-              <div>
-                <div className="font-medium">Office</div>
-                <div style={{ color: 'var(--color-content-secondary)' }}>Wholesale Support Desk</div>
-              </div>
-            </div>
-          </div>
+          )}
         </section>
 
         <section className="lg:col-span-2 rounded-2xl border p-6" style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-surface-secondary)' }}>

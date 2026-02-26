@@ -15,7 +15,7 @@ export default function Header() {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
   const [showResults, setShowResults] = useState(false);
-  const [theme, setTheme] = useState(() => document.documentElement.getAttribute('data-theme') || 'dark');
+  const [theme, setTheme] = useState(() => { try { return localStorage.getItem('ecom-theme') || document.documentElement.getAttribute('data-theme') || 'dark'; } catch { return 'dark'; } });
   const [mobileMenu, setMobileMenu] = useState(false);
   const [userMenu, setUserMenu] = useState(false);
   const [settings, setSettings] = useState(null);
@@ -38,9 +38,19 @@ export default function Header() {
   }, []);
 
   const toggleTheme = () => {
+    // Suppress ALL transitions for two frames so every element switches colour at
+    // exactly the same instant — no visible cascade across components.
+    const style = document.createElement('style');
+    style.textContent = '*,*::before,*::after{transition:none!important}';
+    document.head.appendChild(style);
+
     const next = theme === 'dark' ? 'light' : 'dark';
     document.documentElement.setAttribute('data-theme', next);
+    try { localStorage.setItem('ecom-theme', next); } catch (e) {}
     setTheme(next);
+
+    // Re-enable transitions after the browser has painted the new colours.
+    requestAnimationFrame(() => requestAnimationFrame(() => document.head.removeChild(style)));
   };
 
   const handleSearch = (e) => {

@@ -139,7 +139,7 @@ export default function ProductDetailPage() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
         {/* Gallery */}
-        <div>
+        <div className="w-full max-w-[560px]">
           <div className="rounded-xl overflow-hidden border mb-3 aspect-square" style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-surface-tertiary)' }}>
             {mainImage ? (
               <img src={mainImage} alt={product.name} className="w-full h-full object-contain" />
@@ -206,13 +206,22 @@ export default function ProductDetailPage() {
             <div>
               <div className="flex items-center justify-between mb-2">
                 <span className="text-sm font-semibold">Variants ({variants.length})</span>
-                <button
-                  onClick={addAllToCart}
-                  disabled={!isAuthenticated}
-                  className="btn btn-secondary btn-sm flex items-center gap-1.5 disabled:opacity-50"
-                >
-                  <ShoppingCart className="w-3.5 h-3.5" /> Add All to Cart
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={addAllToCart}
+                    disabled={!isAuthenticated}
+                    className="btn btn-secondary btn-sm flex items-center gap-1.5 disabled:opacity-50"
+                  >
+                    <ShoppingCart className="w-3.5 h-3.5" /> Add All to Cart
+                  </button>
+                  <button
+                    onClick={() => toggle(product)}
+                    className={`btn btn-secondary btn-sm ${wishlisted ? 'text-red-500' : ''}`}
+                    title="Add to wishlist"
+                  >
+                    <Heart className="w-4 h-4" fill={wishlisted ? 'currentColor' : 'none'} />
+                  </button>
+                </div>
               </div>
               <div className="rounded-xl border overflow-hidden" style={{ borderColor: 'var(--color-border)' }}>
                 <table className="w-full text-sm">
@@ -275,6 +284,7 @@ export default function ProductDetailPage() {
                                 min="0"
                                 value={vQty}
                                 onChange={(e) => setVarQty(v._id, parseInt(e.target.value) || 0)}
+                                onWheel={(e) => e.currentTarget.blur()}
                                 className="w-10 text-center text-sm bg-transparent outline-none"
                               />
                               <button
@@ -304,42 +314,45 @@ export default function ProductDetailPage() {
             </div>
           )}
 
-          {/* Quantity + Add to cart (for single products or overall) */}
-          <div className="flex items-center gap-4">
-            <div className="flex items-center border rounded-lg overflow-hidden" style={{ borderColor: 'var(--color-border)' }}>
-              <button onClick={() => setQty(Math.max(1, qty - 1))} className="px-3 py-2 hover:bg-[var(--color-surface-tertiary)] transition-colors">
-                <Minus className="w-4 h-4" />
+          {/* Quantity + Add to cart (single products only) */}
+          {!isParent && (
+            <div className="flex items-center gap-4">
+              <div className="flex items-center border rounded-lg overflow-hidden" style={{ borderColor: 'var(--color-border)' }}>
+                <button onClick={() => setQty(Math.max(1, qty - 1))} className="px-3 py-2 hover:bg-[var(--color-surface-tertiary)] transition-colors">
+                  <Minus className="w-4 h-4" />
+                </button>
+                <input
+                  type="number"
+                  min="1"
+                  value={qty}
+                  onChange={(e) => setQty(Math.max(1, parseInt(e.target.value) || 1))}
+                  onWheel={(e) => e.currentTarget.blur()}
+                  className="w-14 text-center text-sm bg-transparent border-x outline-none py-2"
+                  style={{ borderColor: 'var(--color-border)' }}
+                />
+                <button onClick={() => setQty(qty + 1)} className="px-3 py-2 hover:bg-[var(--color-surface-tertiary)] transition-colors">
+                  <Plus className="w-4 h-4" />
+                </button>
+              </div>
+
+              <button
+                onClick={handleAddToCart}
+                disabled={!activeInStock || !isAuthenticated}
+                className="btn btn-primary btn-lg flex-1"
+              >
+                <ShoppingCart className="w-5 h-5" />
+                {isAuthenticated ? 'Add to Cart' : 'Login to Buy'}
               </button>
-              <input
-                type="number"
-                min="1"
-                value={qty}
-                onChange={(e) => setQty(Math.max(1, parseInt(e.target.value) || 1))}
-                className="w-14 text-center text-sm bg-transparent border-x outline-none py-2"
-                style={{ borderColor: 'var(--color-border)' }}
-              />
-              <button onClick={() => setQty(qty + 1)} className="px-3 py-2 hover:bg-[var(--color-surface-tertiary)] transition-colors">
-                <Plus className="w-4 h-4" />
+
+              <button
+                onClick={() => toggle(product)}
+                className={`btn btn-lg ${wishlisted ? 'text-red-500' : ''}`}
+                style={{ backgroundColor: 'var(--color-surface-tertiary)', borderColor: 'var(--color-border)' }}
+              >
+                <Heart className="w-5 h-5" fill={wishlisted ? 'currentColor' : 'none'} />
               </button>
             </div>
-
-            <button
-              onClick={handleAddToCart}
-              disabled={!activeInStock || !isAuthenticated}
-              className="btn btn-primary btn-lg flex-1"
-            >
-              <ShoppingCart className="w-5 h-5" />
-              {isAuthenticated ? 'Add to Cart' : 'Login to Buy'}
-            </button>
-
-            <button
-              onClick={() => toggle(product)}
-              className={`btn btn-lg ${wishlisted ? 'text-red-500' : ''}`}
-              style={{ backgroundColor: 'var(--color-surface-tertiary)', borderColor: 'var(--color-border)' }}
-            >
-              <Heart className="w-5 h-5" fill={wishlisted ? 'currentColor' : 'none'} />
-            </button>
-          </div>
+          )}
 
           {/* Unit */}
           {product.unit && (

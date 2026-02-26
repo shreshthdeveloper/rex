@@ -17,13 +17,12 @@ export function CartProvider({ children }) {
 
   useEffect(() => { localStorage.setItem(STORAGE_KEY, JSON.stringify(items)); }, [items]);
 
+  // Clear cart completely on logout
   useEffect(() => {
-    if (isAuthenticated) return;
-    setItems((prev) => {
-      const hasPrices = prev.some((item) => item.price != null);
-      if (!hasPrices) return prev;
-      return prev.map((item) => ({ ...item, price: null }));
-    });
+    if (!isAuthenticated) {
+      setItems([]);
+      localStorage.removeItem(STORAGE_KEY);
+    }
   }, [isAuthenticated]);
 
   const addItem = useCallback((product, variant, qty = 1) => {

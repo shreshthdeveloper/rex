@@ -19,7 +19,6 @@ import TermsConditionsPage from './pages/TermsConditionsPage';
 import PrivacyPolicyPage from './pages/PrivacyPolicyPage';
 import ReturnRefundPage from './pages/ReturnRefundPage';
 import { useAuth } from './context/AuthContext';
-import FloatingCatLottie from './components/common/FloatingCatLottie';
 
 function ProtectedRoute({ children }) {
   const { isAuthenticated } = useAuth();
@@ -39,7 +38,6 @@ export default function App() {
     <div className="flex flex-col min-h-screen">
       {/* Age gate — renders as overlay when enabled, before any page content */}
       <AgeVerificationModal />
-      <FloatingCatLottie />
       <Header />
       <CategoryNav />
       <main className="flex-1">

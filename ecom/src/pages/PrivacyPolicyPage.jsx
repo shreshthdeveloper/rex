@@ -1,6 +1,8 @@
+import { useState, useEffect } from 'react';
 import PolicyPageLayout from '../components/common/PolicyPageLayout';
+import { catalogService } from '../services/catalogService';
 
-const content = `
+const STATIC_CONTENT = `
 Privacy Policy — Phantom Distribution
 
 This Privacy Policy explains how Phantom Distribution ("we", "us", "our") collects, uses, discloses, and protects your personal information when you access or use our website, products, or services. By using our services you consent to the practices described in this policy.
@@ -29,9 +31,35 @@ We may update this Privacy Policy from time to time. We will notify you of any m
 Contact: For questions about this policy, please contact our support team.
 `;
 
-const paragraphs = content.split('\n\n').map(p => p.trim()).filter(Boolean);
-
 export default function PrivacyPolicyPage() {
+  const [htmlContent, setHtmlContent] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    catalogService
+      .getSettings()
+      .then((s) => {
+        if (s?.privacyContent) setHtmlContent(s.privacyContent);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="container-main py-10">
+        <div className="animate-pulse h-64 rounded-2xl" style={{ backgroundColor: 'var(--color-surface-tertiary)' }} />
+      </div>
+    );
+  }
+
+  if (htmlContent) {
+    return (
+      <PolicyPageLayout title="Privacy Policy" subtitle="Last updated: February 2026" htmlContent={htmlContent} />
+    );
+  }
+
+  const paragraphs = STATIC_CONTENT.split('\n\n').map((p) => p.trim()).filter(Boolean);
   const sections = paragraphs.map((para, i) => ({ paragraphs: [para], title: i === 0 ? 'Privacy Policy' : undefined }));
   return <PolicyPageLayout title="Privacy Policy" subtitle="Last updated: February 2026" sections={sections} />;
 }
