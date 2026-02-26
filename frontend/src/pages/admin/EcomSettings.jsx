@@ -5,8 +5,8 @@ import {
   GlassCard, Button, Input, Loader, TabList, PageHeader,
 } from '../../components/ui';
 import {
-  Settings, Palette, Image, Layout, Megaphone, FileText, Globe,
-  Plus, Trash2, GripVertical, Eye, EyeOff, Save, ChevronDown, ChevronUp,
+  Megaphone, FileText, Globe,
+  Plus, Trash2, GripVertical, Eye, EyeOff, Save,
   Upload, X, Layers, ShieldCheck, ToggleLeft, ToggleRight, MousePointerClick,
 } from 'lucide-react';
 
@@ -16,6 +16,7 @@ const TABS = [
   { id: 'layout', label: 'Layout' },
   { id: 'marquee', label: 'Marquee & Alerts' },
   { id: 'terms', label: 'T&C & Docs' },
+  { id: 'brand_policies', label: 'Brand Policies' },
   { id: 'footer', label: 'Footer & Social' },
   { id: 'queries', label: 'Queries' },
   { id: 'modals', label: 'Modal Settings' },
@@ -512,6 +513,55 @@ export default function EcomSettings() {
               ))}
             </div>
           </GlassCard>
+        </div>
+      )}
+
+      {/* ══════════ BRAND POLICIES ══════════ */}
+      {tab === 'brand_policies' && (
+        <div className="space-y-4">
+          {[
+            { key: 'termsContent', label: 'Terms & Conditions', hint: 'Content for the /terms-and-conditions page' },
+            { key: 'returnRefundContent', label: 'Return & Refund Policy', hint: 'Content for the /return-and-refund-policy page' },
+            { key: 'privacyContent', label: 'Privacy Policy', hint: 'Content for the /privacy-policy page' },
+            { key: 'contactContent', label: 'Contact Us (Info Block)', hint: 'Custom info text shown in the Contact Us page (email/address etc.)' },
+            { key: 'aboutUsContent', label: 'About Us', hint: 'Content for the /about-us page' },
+          ].map(({ key, label, hint }) => (
+            <GlassCard key={key}>
+              <div className="flex items-start justify-between mb-3">
+                <div>
+                  <h3 className="text-sm font-semibold text-slate-800 flex items-center gap-2">
+                    <FileText size={14} className="text-violet-600" /> {label}
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-0.5">{hint}. Supports HTML.</p>
+                </div>
+                {data[key] && (
+                  <button
+                    type="button"
+                    onClick={() => set(key, '')}
+                    className="text-xs text-red-400/70 hover:text-red-400 flex items-center gap-1"
+                  >
+                    <Trash2 size={11} /> Clear
+                  </button>
+                )}
+              </div>
+              <textarea
+                value={data[key] || ''}
+                onChange={(e) => set(key, e.target.value)}
+                rows={10}
+                className="w-full glass-input p-4 text-sm rounded-lg resize-y font-mono"
+                placeholder={`Enter ${label} content (supports HTML tags like <p>, <b>, <ul>, etc.)...`}
+              />
+              {data[key] && (
+                <details className="mt-2">
+                  <summary className="text-xs text-slate-400 cursor-pointer select-none hover:text-slate-600">Preview rendered HTML</summary>
+                  <div
+                    className="mt-2 p-4 rounded-lg border border-violet-100 bg-violet-50/30 text-sm prose prose-sm max-w-none text-slate-700"
+                    dangerouslySetInnerHTML={{ __html: data[key] }}
+                  />
+                </details>
+              )}
+            </GlassCard>
+          ))}
         </div>
       )}
 

@@ -8,6 +8,8 @@ const brandSchema = new mongoose.Schema(
     image: { type: String, default: '' },
     description: { type: String, default: '' },
     isActive: { type: Boolean, default: true },
+    hideFromGuests: { type: Boolean, default: false },
+    hideFromCustomers: { type: Boolean, default: false },
   },
   { timestamps: true }
 );

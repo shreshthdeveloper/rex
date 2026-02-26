@@ -50,14 +50,22 @@ const getCategories = asyncHandler(async (req, res) => {
 });
 
 const getBrands = asyncHandler(async (req, res) => {
+  const isGuest = !req.customer;
+  const hiddenBrandIds = await req.models.Brand.find(
+    isGuest ? { hideFromGuests: true } : { hideFromCustomers: true },
+  ).distinct('_id');
+
   // Return brands that have at least one active product (regardless of brand.isActive)
   const activeBrandIds = await req.models.Product.distinct('brand', { isActive: true, brand: { $ne: null } });
-  const brands = await req.models.Brand.find({
+  const brandFilter = {
     $or: [
       { _id: { $in: activeBrandIds } },
       { isActive: true },
     ],
-  }).sort({ name: 1 }).lean();
+  };
+  if (hiddenBrandIds.length > 0) brandFilter._id = { $nin: hiddenBrandIds };
+
+  const brands = await req.models.Brand.find(brandFilter).sort({ name: 1 }).lean();
   res.json(new ApiResponse(200, brands));
 });
 
@@ -81,7 +89,19 @@ const getProducts = asyncHandler(async (req, res) => {
   if (catConditions.length === 1) Object.assign(filter, catConditions[0]);
   else if (catConditions.length > 1) filter.$and = catConditions;
 
-  if (brand) filter.brand = brand;
+  // Brand visibility enforcement
+  const hiddenBrands = await req.models.Brand.find(
+    isGuest ? { hideFromGuests: true } : { hideFromCustomers: true },
+  ).distinct('_id');
+  if (brand) {
+    if (hiddenBrands.some((id) => id.toString() === brand.toString())) {
+      return res.json(new ApiResponse(200, { products: [], pagination: paginationMeta(0, pg, lim) }));
+    }
+    filter.brand = brand;
+  } else if (hiddenBrands.length > 0) {
+    filter.brand = { $nin: hiddenBrands };
+  }
+
   if (featured === 'true') filter.isFeatured = true;
   if (tag) filter.tags = { $regex: tag, $options: 'i' };
   if (search) {
@@ -215,6 +235,16 @@ const getProductBySlug = asyncHandler(async (req, res) => {
     if (hiddenCat) throw new ApiError(404, 'Product not found');
   }
 
+  // Guard: block access if product's brand is hidden
+  if (product.brand) {
+    const brandId = product.brand._id || product.brand;
+    const hiddenBrand = await req.models.Brand.findOne({
+      _id: brandId,
+      ...(isGuest ? { hideFromGuests: true } : { hideFromCustomers: true }),
+    });
+    if (hiddenBrand) throw new ApiError(404, 'Product not found');
+  }
+
   let variants = [];
   let availability = { inStock: false, availableQty: 0 };
 
@@ -279,6 +309,16 @@ const getProductById = asyncHandler(async (req, res) => {
     if (hiddenCat) throw new ApiError(404, 'Product not found');
   }
 
+  // Guard: block access if product's brand is hidden
+  if (product.brand) {
+    const brandId = product.brand._id || product.brand;
+    const hiddenBrand = await req.models.Brand.findOne({
+      _id: brandId,
+      ...(isGuest ? { hideFromGuests: true } : { hideFromCustomers: true }),
+    });
+    if (hiddenBrand) throw new ApiError(404, 'Product not found');
+  }
+
   let variants = [];
   let availability = { inStock: false, availableQty: 0 };
 
@@ -329,6 +369,11 @@ const getFeatured = asyncHandler(async (req, res) => {
 
   const baseFilter = { isActive: true, isFeatured: true, type: { $in: ['single', 'parent'] } };
   if (hiddenCats.length > 0) baseFilter.categories = { $nin: hiddenCats };
+
+  const hiddenBrandsFeatured = await req.models.Brand.find(
+    isGuest ? { hideFromGuests: true } : { hideFromCustomers: true },
+  ).distinct('_id');
+  if (hiddenBrandsFeatured.length > 0) baseFilter.brand = { $nin: hiddenBrandsFeatured };
 
   const products = await req.models.Product.find(baseFilter)
     .select('name sku slug basePrice compareAtPrice images brand categories type')
@@ -391,6 +436,11 @@ const getNewArrivals = asyncHandler(async (req, res) => {
 
   const baseFilter = { isActive: true, type: { $in: ['single', 'parent'] } };
   if (hiddenCats.length > 0) baseFilter.categories = { $nin: hiddenCats };
+
+  const hiddenBrandsNew = await req.models.Brand.find(
+    isGuest ? { hideFromGuests: true } : { hideFromCustomers: true },
+  ).distinct('_id');
+  if (hiddenBrandsNew.length > 0) baseFilter.brand = { $nin: hiddenBrandsNew };
 
   const products = await req.models.Product.find(baseFilter)
     .select('name sku slug basePrice compareAtPrice images brand categories type')
@@ -504,6 +554,10 @@ const search = asyncHandler(async (req, res) => {
   if (hiddenCats.length > 0) {
     filter.categories = { $nin: hiddenCats };
   }
+  const hiddenBrandsSearch = await req.models.Brand.find(
+    isGuest ? { hideFromGuests: true } : { hideFromCustomers: true },
+  ).distinct('_id');
+  if (hiddenBrandsSearch.length > 0) filter.brand = { $nin: hiddenBrandsSearch };
   const [products, total] = await Promise.all([
     req.models.Product.find(filter)
       .select('name sku slug basePrice compareAtPrice images brand categories type')

@@ -696,7 +696,7 @@ Files changed:
 - Ecom/src/pages/HomePage.jsx
 - Ecom/src/components/home/WordFifoMarquee.jsx (deleted)
 
-## 2026-02-26 13:35 � Added top-right cat Lottie + API origin guidance
+## 2026-02-26 13:35 � Added top-right cat Lottie + API origin guidance
 - Added a floating cat Lottie animation at the top-right corner of the storefront app shell.
 - Copied provided Lottie JSON into frontend assets and rendered it with lottie-react.
 - Kept the animation non-interactive (pointer-events-none) so it does not block header clicks.
@@ -706,3 +706,176 @@ Files changed:
 - Ecom/src/components/common/FloatingCatLottie.jsx
 - Ecom/src/App.jsx
 - Ecom/package.json
+
+## 2026-02-26 14:30 - Multi-feature batch: theme, brand visibility, brand policies tab
+
+### 1. Theme Persistence (Ecom)
+- Added inline <script> to Ecom/index.html that reads localStorage('ecom-theme') before React mounts so theme is restored on hard reload.
+- Header.jsx now saves chosen theme to localStorage on toggle.
+
+### 2. Brand Model - Hide From Guests/Customers
+- Added hideFromGuests and hideFromCustomers boolean fields to ackend/src/models/org/Brand.js.
+- rands.controller.js (admin) now reads and stores these fields on create/update.
+
+### 3. Admin Brands Page
+- rontend/src/pages/admin/Brands.jsx: Added two new toggle checkboxes in create/edit modal and two table columns ("Hide Guests", "Hide Customers") showing ON/OFF badges.
+
+### 4. Backend Brand Visibility Enforcement
+- ackend/src/routes/store/index.js: Added optionalCustomerAuth to the brands route.
+- ackend/src/controllers/store/catalog.controller.js:
+  - getBrands: filters out hidden brands for guests/customers.
+  - getProducts, getFeatured, getNewArrivals, search: filter products from hidden brands.
+  - getProductBySlug, getProductById: return 404 if product brand is hidden.
+
+### 5. Cart/Wishlist Brand Cleanup on Logout
+- WishlistContext.jsx: fetches visible brands on logout and removes items from hidden brands.
+- CartContext.jsx: stores randId on cart items; on logout calls getBrands and removes hidden-brand items then nulls prices.
+
+### 6. EcomSettings - Brand Policies Fields
+- Added 5 new fields to ackend/src/models/org/EcomSettings.js: 	ermsContent, 
+eturnRefundContent, privacyContent, contactContent, boutUsContent.
+
+### 7. Admin EcomSettings - Brand Policies Tab
+- rontend/src/pages/admin/EcomSettings.jsx: Added "Brand Policies" tab with HTML textarea editors for all 5 policy pages, including a live HTML preview collapsible.
+
+### 8. Ecom Policy Pages - Dynamic Content
+- PolicyPageLayout.jsx: Added htmlContent prop for direct HTML rendering with Tailwind prose-like styles.
+- TermsConditionsPage.jsx, ReturnRefundPage.jsx, PrivacyPolicyPage.jsx: fetch settings on load; use htmlContent if admin has set it, otherwise fall back to static content.
+- AboutUsPage.jsx: shows boutUsContent HTML in hero section if set; hardcoded highlights grid always shown below.
+- ContactUsPage.jsx: shows contactContent HTML in the left info panel if set, else shows hardcoded email/phone/address.
+
+Files changed:
+- Ecom/index.html
+- Ecom/src/components/layout/Header.jsx
+- Ecom/src/components/common/PolicyPageLayout.jsx
+- Ecom/src/context/WishlistContext.jsx
+- Ecom/src/context/CartContext.jsx
+- Ecom/src/pages/TermsConditionsPage.jsx
+- Ecom/src/pages/ReturnRefundPage.jsx
+- Ecom/src/pages/PrivacyPolicyPage.jsx
+- Ecom/src/pages/AboutUsPage.jsx
+- Ecom/src/pages/ContactUsPage.jsx
+- backend/src/models/org/Brand.js
+- backend/src/models/org/EcomSettings.js
+- backend/src/controllers/admin/brands.controller.js
+- backend/src/controllers/store/catalog.controller.js
+- backend/src/routes/store/index.js
+- frontend/src/pages/admin/Brands.jsx
+- frontend/src/pages/admin/EcomSettings.jsx
+---
+
+## 2025-07-14 — Fix corrupted policy pages (build error)
+
+`ReturnRefundPage.jsx` and `TermsConditionsPage.jsx` had dangling old static text outside JSX scope (left by a partial `replace_string_in_file` from the previous session), causing a Vite Babel parse error. Both files were overwritten via PowerShell `Set-Content` with clean, correct implementations using `STATIC_SECTIONS` arrays + settings-driven HTML content.
+**Files:**
+- Ecom/src/pages/ReturnRefundPage.jsx
+- Ecom/src/pages/TermsConditionsPage.jsx
+
+---
+
+## 2025-07-14 — Cart & wishlist clear on logout
+
+Replaced the complex brand-filter-on-logout logic in both cart and wishlist contexts with a simple clear: when `isAuthenticated` becomes `false`, both `setItems([])` immediately (and localStorage is cleared for cart). - Ecom/src/context/WishlistContext.jsx
+- Ecom/src/context/CartContext.jsx
+
+---
+
+## 2026-02-26 — Fix PrivacyPolicyPage parse error + full dead-code cleanup
+
+**Build fix:** `PrivacyPolicyPage.jsx` had the same corruption pattern as the other policy pages (duplicated raw text outside JSX after component close brace). File overwritten with a clean, single-export component using `STATIC_CONTENT` template literal + settings-driven `htmlContent`. Both builds verified clean (✔ 0 errors).
+
+**Dead code removed — Ecom frontend:**
+- Deleted `FloatingCatLottie.jsx` (unreferenced dead file)
+- Removed `brandId` field from `CartContext.addItem` (leftover from brand-filter-on-logout)
+- Fixed `RegisterPage.jsx`: replaced render-time `navigate()` with `useEffect` redirect
+
+**Dead code removed — Admin frontend (unused lucide-react imports):**
+- `EcomSettings.jsx`: removed `Palette`, `ChevronDown`, `ChevronUp`
+- `Orders.jsx`: removed `FileText`, `Clock`
+- `Customers.jsx`: removed `FileText`, `ShoppingCart`
+- `Warehouses.jsx`: removed `Eye`
+- `Suppliers.jsx`: removed `FileText`
+- `StockManagement.jsx`: removed `AlertTriangle`, `BarChart3`
+
+**Files changed:**
+- Ecom/src/pages/PrivacyPolicyPage.jsx
+- Ecom/src/pages/RegisterPage.jsx
+- Ecom/src/context/CartContext.jsx
+- Ecom/src/components/common/FloatingCatLottie.jsx (deleted)
+- frontend/src/pages/admin/EcomSettings.jsx
+- frontend/src/pages/admin/Orders.jsx
+- frontend/src/pages/admin/Customers.jsx
+- frontend/src/pages/admin/Warehouses.jsx
+- frontend/src/pages/admin/Suppliers.jsx
+- frontend/src/pages/admin/StockManagement.jsx
+---
+
+## 2026-02-26 23:45 — Shipment Methods crash fix + full dead-code audit
+
+### Backend crash fix (ShipmentMethod.js)
+- Wrong require path ../plugins/softDelete → ../../plugins/softDelete
+- Destructured import { softDeletePlugin } → plain softDeletePlugin (matching all other models)
+- Exported mongoose.model(...) → exports raw schema (org models use 
+egisterOrgModels in index.js)
+
+### Backend routes fix (shipmentMethods.routes.js)
+- Used non-existent uthenticate/checkPermission middleware → replaced with dminAuth/managerPlus (matching project pattern)
+
+### Frontend ShipmentMethods.jsx fix
+- Imported non-existent Toggle component → replaced with native <input type="checkbox"> (matching Brands.jsx pattern)
+- Used Badge variant="info" → Badge color="blue" (component uses color prop, not ariant)
+- Removed unused setToggle helper
+
+### Dead import cleanup
+- EcomSettings.jsx: removed unused Settings, Image, Layout from lucide-react
+- Orders.jsx: removed unused SearchableSelect from UI imports
+- Suppliers.jsx: removed unused Pagination from UI imports
+
+### Verification
+- Backend server starts and responds (no crash)
+- Admin frontend production build: 1737 modules, 0 errors
+- Ecom production build: 1682 modules, 0 errors
+- All 3 dev servers running simultaneously
+
+**Files:**
+- backend/src/models/org/ShipmentMethod.js
+- backend/src/routes/admin/shipmentMethods.routes.js
+- frontend/src/pages/admin/ShipmentMethods.jsx
+- frontend/src/pages/admin/EcomSettings.jsx
+- frontend/src/pages/admin/Orders.jsx
+- frontend/src/pages/admin/Suppliers.jsx
+---
+
+## 2026-02-27 00:15 — Atomic theme toggle + Babel/gensync corruption fix
+
+### Ecom theme toggle — atomic (no cascade)
+- Removed global `*` CSS transition block from `Ecom/src/index.css` (was causing each element to switch at different times, fighting Tailwind's own transition classes).
+- `Header.jsx` `toggleTheme` now injects a `<style>` tag with `*,*::before,*::after{transition:none!important}` before applying the new theme, then removes it after two `requestAnimationFrame` cycles — net result: every element switches in a single paint, visually instant.
+
+### Babel `npmnpresume` corruption fix
+- `Ecom/node_modules/gensync/index.js` line 223 had text `npmnpresume()` physically injected instead of `resume()` (file corruption, not source code).
+- Patched directly: replaced `npmnpresume()` → `resume()`. Ecom dev server now starts cleanly.
+
+**Files:**
+- Ecom/src/index.css
+- Ecom/src/components/layout/Header.jsx
+- Ecom/node_modules/gensync/index.js (patched in-place)
+
+---
+
+## 2026-02-27 00:30 — Product detail page UI improvements (Ecom)
+
+### Number input spinners removed + scroll-change disabled
+- `Ecom/src/index.css`: added cross-browser CSS to remove up/down spinner arrows from all `<input type="number">` elements (`-moz-appearance: textfield`; `-webkit-appearance: none`).
+- All qty `<input type="number">` in `ProductDetailPage.jsx` now have `onWheel={(e) => e.currentTarget.blur()}` to prevent scroll wheel from changing the value.
+
+### Gallery size reduced
+- Gallery wrapper constrained to `max-w-[560px]` so the image does not span the full half-width on wide screens.
+
+### Parent product — action bar layout fix
+- Wishlist (Heart) button moved next to the "Add All to Cart" button in the variant table header row (was previously only at the bottom of the page).
+- Bottom qty input + "Add to Cart" button + standalone wishlist button block is now wrapped in `{!isParent && (...)}` — completely hidden for parent-type products (those with variants).
+
+**Files:**
+- Ecom/src/index.css
+- Ecom/src/pages/ProductDetailPage.jsx

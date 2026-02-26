@@ -32,6 +32,7 @@ const contactQuerySchema = require('./ContactQuery');
 const brandSchema = require('./Brand');
 const transactionLogSchema = require('./TransactionLog');
 const integrationSchema = require('./Integration');
+const shipmentMethodSchema = require('./ShipmentMethod');
 
 /**
  * Register all org-level models on a given connection.
@@ -80,6 +81,7 @@ const registerOrgModels = (connection) => {
   register('ContactQuery', contactQuerySchema);
   register('TransactionLog', transactionLogSchema);
   register('Integration', integrationSchema);
+  register('ShipmentMethod', shipmentMethodSchema);
 
   return models;
 };

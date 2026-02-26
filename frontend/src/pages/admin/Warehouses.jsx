@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useToast } from '../../context/ToastContext';
 import { PageHeader, Button, Modal, Input, DataTable, Badge, ConfirmDialog, GlassCard, SearchInput, Loader } from '../../components/ui';
 import { warehousesAPI } from '../../api';
-import { Warehouse as WarehouseIcon, Plus, Edit, Trash2, Eye, Package, Layers } from 'lucide-react';
+import { Warehouse as WarehouseIcon, Plus, Edit, Trash2, Package, Layers } from 'lucide-react';
 import AddressAutocomplete from '../../components/AddressAutocomplete';
 
 const emptyForm = {

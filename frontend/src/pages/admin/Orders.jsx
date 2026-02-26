@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useToast } from '../../context/ToastContext';
 import { useTabs } from '../../context/TabContext';
-import { PageHeader, Button, Modal, Input, Select, DataTable, Badge, ConfirmDialog, GlassCard, SearchInput, Loader, TabList, Textarea, CsvImport, SearchableSelect } from '../../components/ui';
+import { PageHeader, Button, Modal, Input, Select, DataTable, Badge, ConfirmDialog, GlassCard, SearchInput, Loader, TabList, Textarea, CsvImport } from '../../components/ui';
 import { ordersAPI, customersAPI, productsAPI, warehousesAPI } from '../../api';
-import { Plus, Edit, Trash2, Eye, ShoppingCart, CreditCard, RotateCcw, FileText, Clock, Zap, Printer, Truck, CheckCircle } from 'lucide-react';
+import { Plus, Edit, Trash2, Eye, ShoppingCart, CreditCard, RotateCcw, Zap, Printer, Truck, CheckCircle } from 'lucide-react';
 import POS from './POS';
 import ProductSearch from '../../components/ProductSearch';
 

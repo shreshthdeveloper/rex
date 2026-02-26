@@ -3,7 +3,7 @@ import { useToast } from '../../context/ToastContext';
 import { PageHeader, Button, Modal, Input, Select, DataTable, Badge, ConfirmDialog, GlassCard, SearchInput, Loader, TabList, Textarea, CsvImport } from '../../components/ui';
 import AddressAutocomplete from '../../components/AddressAutocomplete';
 import { customersAPI } from '../../api';
-import { Plus, Edit, Trash2, Eye, UserCircle, Wallet, ArrowUpCircle, ArrowDownCircle, FileText, ShoppingCart, CreditCard, Receipt, RefreshCw } from 'lucide-react';
+import { Plus, Edit, Trash2, Eye, UserCircle, Wallet, ArrowUpCircle, ArrowDownCircle, CreditCard, Receipt, RefreshCw } from 'lucide-react';
 
 const TIERS = [
   { value: 'retail', label: 'Retail' },

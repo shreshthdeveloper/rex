@@ -30,6 +30,7 @@ import Notifications from '../pages/admin/Notifications';
 import EcomSettings from '../pages/admin/EcomSettings';
 import Brands from '../pages/admin/Brands';
 import Integrations from '../pages/admin/Integrations';
+import ShipmentMethods from '../pages/admin/ShipmentMethods';
 
 const menuSections = [
   {
@@ -86,6 +87,7 @@ const menuSections = [
       { id: 'barcode-types', label: 'Barcode Types', icon: Barcode, component: BarcodeTypes },
       { id: 'tax-slabs', label: 'Tax Slabs', icon: Receipt, component: TaxSlabs },
       { id: 'warehouses', label: 'Warehouses', icon: Warehouse, component: Warehouses },
+      { id: 'shipment-methods', label: 'Shipment Methods', icon: Truck, component: ShipmentMethods },
     ],
   },
 ];

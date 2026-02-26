@@ -2,6 +2,7 @@ const router = require('express').Router();
 const catalogCtrl = require('../../controllers/store/catalog.controller');
 const customerAuthCtrl = require('../../controllers/store/customerAuth.controller');
 const portalCtrl = require('../../controllers/store/portal.controller');
+const shipmentMethodsCtrl = require('../../controllers/store/shipmentMethods.controller');
 const { resolveOrg, customerAuth, optionalCustomerAuth } = require('../../middleware/auth');
 
 // All store routes require org resolution from URL param
@@ -12,7 +13,7 @@ router.get('/:orgSlug/settings', catalogCtrl.getSettings);
 
 // ─── Public Catalog (with optional customer context for visibility) ───
 router.get('/:orgSlug/categories', optionalCustomerAuth, catalogCtrl.getCategories);
-router.get('/:orgSlug/brands', catalogCtrl.getBrands);
+router.get('/:orgSlug/brands', optionalCustomerAuth, catalogCtrl.getBrands);
 router.get('/:orgSlug/products', optionalCustomerAuth, catalogCtrl.getProducts);
 router.get('/:orgSlug/products/featured', optionalCustomerAuth, catalogCtrl.getFeatured);
 router.get('/:orgSlug/products/new-arrivals', optionalCustomerAuth, catalogCtrl.getNewArrivals);
@@ -20,6 +21,7 @@ router.get('/:orgSlug/products/search', optionalCustomerAuth, catalogCtrl.search
 router.get('/:orgSlug/products/slug/:slug', optionalCustomerAuth, catalogCtrl.getProductBySlug);
 router.get('/:orgSlug/products/:id', optionalCustomerAuth, catalogCtrl.getProductById);
 router.get('/:orgSlug/warehouses', catalogCtrl.getWarehouses);
+router.get('/:orgSlug/shipment-methods', shipmentMethodsCtrl.getShipmentMethods);
 router.post('/:orgSlug/contact-query', catalogCtrl.submitContactQuery);
 
 // ─── Customer Auth ───

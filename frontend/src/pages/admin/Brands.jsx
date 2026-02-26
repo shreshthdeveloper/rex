@@ -4,7 +4,7 @@ import { PageHeader, Button, Modal, Input, DataTable, Badge, ConfirmDialog, Glas
 import { brandsAPI } from '../../api';
 import { Plus, Edit, Trash2, Tag } from 'lucide-react';
 
-const emptyForm = { name: '', description: '', image: '', isActive: true };
+const emptyForm = { name: '', description: '', image: '', isActive: true, hideFromGuests: false, hideFromCustomers: false };
 
 export default function Brands() {
   const toast = useToast();
@@ -37,7 +37,7 @@ export default function Brands() {
   const openCreate = () => { setEditing(null); setForm(emptyForm); setModalOpen(true); };
   const openEdit = (b) => {
     setEditing(b);
-    setForm({ name: b.name || '', description: b.description || '', image: b.image || '', isActive: b.isActive !== false });
+    setForm({ name: b.name || '', description: b.description || '', image: b.image || '', isActive: b.isActive !== false, hideFromGuests: b.hideFromGuests || false, hideFromCustomers: b.hideFromCustomers || false });
     setModalOpen(true);
   };
   const closeModal = () => { setModalOpen(false); setEditing(null); setForm(emptyForm); };
@@ -104,6 +104,12 @@ export default function Brands() {
     { key: 'isActive', label: 'Status', render: (r) => (
       <Badge color={r.isActive !== false ? 'green' : 'red'}>{r.isActive !== false ? 'Active' : 'Inactive'}</Badge>
     )},
+    { key: 'hideFromGuests', label: 'Hide Guests', render: (r) => (
+      <Badge color={r.hideFromGuests ? 'red' : 'green'}>{r.hideFromGuests ? 'ON' : 'OFF'}</Badge>
+    )},
+    { key: 'hideFromCustomers', label: 'Hide Customers', render: (r) => (
+      <Badge color={r.hideFromCustomers ? 'red' : 'green'}>{r.hideFromCustomers ? 'ON' : 'OFF'}</Badge>
+    )},
   ];
 
   return (
@@ -131,6 +137,14 @@ export default function Brands() {
           <label className="flex items-center gap-2 cursor-pointer">
             <input type="checkbox" checked={form.isActive} onChange={(e) => setForm((p) => ({ ...p, isActive: e.target.checked }))} className="w-4 h-4 rounded border-gray-600 text-violet-600 focus:ring-violet-500 bg-transparent" />
             <span className="text-sm text-slate-600">Active</span>
+          </label>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" checked={form.hideFromGuests} onChange={(e) => setForm((p) => ({ ...p, hideFromGuests: e.target.checked }))} className="w-4 h-4 rounded border-gray-600 text-violet-600 focus:ring-violet-500 bg-transparent" />
+            <span className="text-sm text-slate-600">Hide from Guests</span>
+          </label>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" checked={form.hideFromCustomers} onChange={(e) => setForm((p) => ({ ...p, hideFromCustomers: e.target.checked }))} className="w-4 h-4 rounded border-gray-600 text-violet-600 focus:ring-violet-500 bg-transparent" />
+            <span className="text-sm text-slate-600">Hide from Customers</span>
           </label>
         </div>
       </Modal>

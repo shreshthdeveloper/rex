@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useToast } from '../../context/ToastContext';
 import { PageHeader, Button, Modal, Input, Select, Textarea, DataTable, Badge, GlassCard, SearchInput, Loader, TabList, Pagination } from '../../components/ui';
 import { stockAPI, productsAPI, warehousesAPI } from '../../api';
-import { Plus, Layers, ArrowLeftRight, AlertTriangle, BarChart3, CheckCircle, XCircle, Package, Trash2, Eye, Pencil } from 'lucide-react';
+import { Plus, Layers, ArrowLeftRight, CheckCircle, XCircle, Package, Trash2, Eye, Pencil } from 'lucide-react';
 import ProductSearch from '../../components/ProductSearch';
 
 const tabs = [

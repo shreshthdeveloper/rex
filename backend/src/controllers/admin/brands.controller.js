@@ -9,7 +9,7 @@ const list = asyncHandler(async (req, res) => {
 });
 
 const create = asyncHandler(async (req, res) => {
-  const { name, image, description, isActive } = req.body;
+  const { name, image, description, isActive, hideFromGuests, hideFromCustomers } = req.body;
   if (!name?.trim()) throw new ApiError(400, 'Brand name is required');
   const slug = generateSlug(name);
   const existing = await req.models.Brand.findOne({ slug });
@@ -17,6 +17,8 @@ const create = asyncHandler(async (req, res) => {
   const brand = await req.models.Brand.create({
     name, slug, image: image || '', description: description || '',
     isActive: isActive !== false,
+    hideFromGuests: !!hideFromGuests,
+    hideFromCustomers: !!hideFromCustomers,
   });
   res.status(201).json(new ApiResponse(201, brand, 'Brand created'));
 });

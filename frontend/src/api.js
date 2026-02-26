@@ -84,6 +84,7 @@ export const unitsAPI = adminCrud('units');
 export const barcodeTypesAPI = adminCrud('barcode-types');
 export const taxSlabsAPI = adminCrud('tax-slabs');
 export const brandsAPI = adminCrud('brands');
+export const shipmentMethodsAPI = adminCrud('shipment-methods');
 
 export const warehousesAPI = {
   ...adminCrud('warehouses'),

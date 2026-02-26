@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useToast } from '../../context/ToastContext';
-import { PageHeader, Button, Modal, Input, Select, DataTable, Badge, ConfirmDialog, GlassCard, SearchInput, Loader, TabList, Textarea, Pagination } from '../../components/ui';
+import { PageHeader, Button, Modal, Input, Select, DataTable, Badge, ConfirmDialog, GlassCard, SearchInput, Loader, TabList, Textarea } from '../../components/ui';
 import { suppliersAPI } from '../../api';
-import { Plus, Edit, Trash2, Eye, Truck, Wallet, CreditCard, FileText, ArrowUpCircle, RefreshCw } from 'lucide-react';
+import { Plus, Edit, Trash2, Eye, Truck, Wallet, CreditCard, ArrowUpCircle, RefreshCw } from 'lucide-react';
 
 const PAYMENT_METHODS = [
   { value: 'cash', label: 'Cash' },

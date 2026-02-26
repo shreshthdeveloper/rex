@@ -91,6 +91,13 @@ const ecomSettingsSchema = new mongoose.Schema({
     required: { type: Boolean, default: false },
   }],
 
+  /* Brand / Page Policies */
+  termsContent: { type: String, default: '' },
+  returnRefundContent: { type: String, default: '' },
+  privacyContent: { type: String, default: '' },
+  contactContent: { type: String, default: '' },
+  aboutUsContent: { type: String, default: '' },
+
   /* Footer */
   footerText: { type: String, default: '' },
   socialLinks: {
