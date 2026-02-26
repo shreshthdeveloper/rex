@@ -649,3 +649,60 @@ Files changed:
 Files changed:
 - Ecom/src/pages/HomePage.jsx
 - Ecom/src/components/home/HeroBanner.jsx
+
+## 2026-02-26 12:50 ï¿½ FIFO word marquee under hero banner
+- Replaced sentence-level marquee with a true FIFO word-based marquee below the hero banner.
+- Marquee now rotates at word granularity: as soon as the first word exits left, it is moved to the end and re-enters from the right.
+- Added resilient per-word width-based linear motion so rotation does not wait for the full sentence to scroll out.
+
+Files changed:
+- Ecom/src/components/home/WordFifoMarquee.jsx
+- Ecom/src/pages/HomePage.jsx
+
+## 2026-02-26 12:50 ï¿½ FIFO word marquee under hero banner
+- Replaced sentence-level marquee with a true FIFO word-based marquee below the hero banner.
+- Marquee now rotates at word granularity: as soon as the first word exits left, it is moved to the end and re-enters from the right.
+- Added resilient per-word width-based linear motion so rotation does not wait for the full sentence to scroll out.
+
+Files changed:
+- Ecom/src/components/home/WordFifoMarquee.jsx
+- Ecom/src/pages/HomePage.jsx
+
+## 2026-02-26 13:05 ï¿½ Marquee full-width fix + frontend env configuration
+- Fixed marquee layout to span full website width (removed centered container constraint), preserving normal sentence-like spacing.
+- Reduced excessive inter-word spacing by switching to natural word spacing (word + non-breaking space) and kept FIFO word rotation.
+- Ensured continuous stream look by rendering repeated word cycles so the ticker remains visually filled.
+- Added frontend .env support for backend/org selection:
+  - VITE_ORG_SLUG
+  - VITE_API_BASE_PREFIX
+  - VITE_API_ORIGIN
+  - VITE_DEV_API_PROXY_TARGET
+- Added .env and .env.example for the Ecom app.
+
+Files changed:
+- Ecom/src/components/home/WordFifoMarquee.jsx
+- Ecom/src/config/constants.js
+- Ecom/src/services/api.js
+- Ecom/vite.config.js
+- Ecom/.env
+- Ecom/.env.example
+
+## 2026-02-26 13:20 â€” Revert marquee to original implementation
+- Reverted homepage marquee from FIFO word rotation back to the original sentence marquee behavior.
+- Restored the original marquee markup in HomePage (`container-main` + `animate-[scroll_20s_linear_infinite]`).
+- Removed temporary FIFO marquee component file.
+
+Files changed:
+- Ecom/src/pages/HomePage.jsx
+- Ecom/src/components/home/WordFifoMarquee.jsx (deleted)
+
+## 2026-02-26 13:35 — Added top-right cat Lottie + API origin guidance
+- Added a floating cat Lottie animation at the top-right corner of the storefront app shell.
+- Copied provided Lottie JSON into frontend assets and rendered it with lottie-react.
+- Kept the animation non-interactive (pointer-events-none) so it does not block header clicks.
+
+Files changed:
+- Ecom/src/assets/black-rainbow-cat.json
+- Ecom/src/components/common/FloatingCatLottie.jsx
+- Ecom/src/App.jsx
+- Ecom/package.json
