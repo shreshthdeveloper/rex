@@ -215,6 +215,11 @@ export const ecomSettingsAPI = {
   update: (data) => api.put('/admin/ecom-settings', data, withToken('adminToken')),
 };
 
+export const ecomQueriesAPI = {
+  list: (params) => api.get('/admin/ecom-queries', { ...withToken('adminToken'), params }),
+  updateStatus: (id, status) => api.patch(`/admin/ecom-queries/${id}/status`, { status }, withToken('adminToken')),
+};
+
 export const integrationsAPI = {
   list: () => api.get('/admin/integrations', withToken('adminToken')),
   get: (slug) => api.get(`/admin/integrations/${slug}`, withToken('adminToken')),
@@ -256,6 +261,7 @@ export const storeAPI = {
   search: (slug, params) => api.get(`${storeBase(slug)}/products/search`, { params }),
   productBySlug: (slug, productSlug) => api.get(`${storeBase(slug)}/products/slug/${productSlug}`),
   productById: (slug, id) => api.get(`${storeBase(slug)}/products/${id}`),
+  submitContactQuery: (slug, data) => api.post(`${storeBase(slug)}/contact-query`, data),
 };
 
 export const customerAuthAPI = {

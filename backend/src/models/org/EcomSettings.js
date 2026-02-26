@@ -1,5 +1,36 @@
 const mongoose = require('mongoose');
 
+const modalButtonSchema = new mongoose.Schema({
+  label: { type: String, default: 'OK' },
+  action: { type: String, enum: ['close', 'submit', 'decline', 'url'], default: 'close' },
+  url: { type: String, default: '' },
+  style: { type: String, enum: ['primary', 'secondary', 'danger', 'outline'], default: 'primary' },
+}, { _id: true });
+
+const modalFormFieldSchema = new mongoose.Schema({
+  label: { type: String, required: true },
+  placeholder: { type: String, default: '' },
+  fieldType: { type: String, enum: ['text', 'email', 'phone', 'checkbox', 'select', 'textarea'], default: 'text' },
+  options: [{ type: String }],     // for select
+  required: { type: Boolean, default: false },
+}, { _id: true });
+
+const modalSchema = new mongoose.Schema({
+  title: { type: String, default: '' },
+  body: { type: String, default: '' },
+  showOn: [{ type: String, enum: ['home', 'products', 'product_detail', 'cart', 'checkout', 'account', 'all'], default: 'all' }],
+  trigger: { type: String, enum: ['on_load', 'on_exit', 'on_scroll', 'manual'], default: 'on_load' },
+  triggerDelay: { type: Number, default: 0 },    // milliseconds
+  frequency: { type: String, enum: ['every_visit', 'once_per_session', 'once'], default: 'once_per_session' },
+  isEnabled: { type: Boolean, default: true },
+  formFields: [modalFormFieldSchema],
+  buttons: [modalButtonSchema],
+  bgColor: { type: String, default: '' },
+  textColor: { type: String, default: '' },
+  overlayColor: { type: String, default: '' },
+  maxWidth: { type: String, enum: ['sm', 'md', 'lg', 'xl'], default: 'md' },
+}, { _id: true });
+
 const bannerSchema = new mongoose.Schema({
   title: { type: String, default: '' },
   subtitle: { type: String, default: '' },
@@ -68,6 +99,16 @@ const ecomSettingsSchema = new mongoose.Schema({
     twitter: { type: String, default: '' },
     youtube: { type: String, default: '' },
   },
+
+  /* Custom Modals */
+  modals: [modalSchema],
+
+  /* Age Verification */
+  ageVerificationEnabled: { type: Boolean, default: false },
+  ageVerificationTitle: { type: String, default: 'Age Verification Required' },
+  ageVerificationMessage: { type: String, default: 'You must be at least 18 years old to access this website. Please confirm your age to continue.' },
+  ageVerificationMinAge: { type: Number, default: 18 },
+  ageVerificationLockMessage: { type: String, default: 'Access to this website is restricted to users aged 18 and above.' },
 }, { timestamps: true });
 
 module.exports = ecomSettingsSchema;

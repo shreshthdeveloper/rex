@@ -4,29 +4,23 @@ const ApiResponse = require('../../utils/ApiResponse');
 const { generateSlug } = require('../../utils/helpers');
 
 const list = asyncHandler(async (req, res) => {
-  const categories = await req.models.Category.find().sort({ sortOrder: 1 });
-  // Build tree
-  const map = {};
-  const roots = [];
-  categories.forEach((c) => { map[c._id.toString()] = { ...c.toObject(), children: [] }; });
-  categories.forEach((c) => {
-    if (c.parentCategory) {
-      const parent = map[c.parentCategory.toString()];
-      if (parent) parent.children.push(map[c._id.toString()]);
-    } else {
-      roots.push(map[c._id.toString()]);
-    }
-  });
-  res.json(new ApiResponse(200, roots));
+  // Return a flat list with parentCategory populated so the admin table
+  // can display all categories (including sub-categories) in one flat view.
+  const categories = await req.models.Category.find()
+    .populate('parentCategory', 'name')
+    .sort({ sortOrder: 1, name: 1 })
+    .lean();
+  res.json(new ApiResponse(200, categories));
 });
 
 const create = asyncHandler(async (req, res) => {
-  const { name, parentCategory, image, description, sortOrder, isActive } = req.body;
+  const { name, parentCategory, image, description, sortOrder, isActive, hideFromCustomers, hideFromGuests } = req.body;
   const slug = generateSlug(name);
   const cat = await req.models.Category.create({
     name, slug, parentCategory: parentCategory || null,
     image: image || '', description: description || '',
     sortOrder: sortOrder || 0, isActive: isActive !== false,
+    hideFromCustomers: !!hideFromCustomers, hideFromGuests: !!hideFromGuests,
   });
   res.status(201).json(new ApiResponse(201, cat, 'Category created'));
 });

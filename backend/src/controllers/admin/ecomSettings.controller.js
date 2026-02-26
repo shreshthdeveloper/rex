@@ -29,6 +29,9 @@ const updateSettings = asyncHandler(async (req, res) => {
     'productsPerRow', 'productsPerPage', 'showFeatured', 'showCategories',
     'sections', 'termsAndConditions', 'requireTermsOnSignup', 'requiredDocuments',
     'footerText', 'socialLinks',
+    'modals',
+    'ageVerificationEnabled', 'ageVerificationTitle', 'ageVerificationMessage',
+    'ageVerificationMinAge', 'ageVerificationLockMessage',
   ];
 
   allowed.forEach((k) => {

@@ -28,6 +28,7 @@ const couponSchema = require('./Coupon');
 const notificationSchema = require('./Notification');
 const counterSchema = require('./Counter');
 const ecomSettingsSchema = require('./EcomSettings');
+const contactQuerySchema = require('./ContactQuery');
 const brandSchema = require('./Brand');
 const transactionLogSchema = require('./TransactionLog');
 const integrationSchema = require('./Integration');
@@ -76,6 +77,7 @@ const registerOrgModels = (connection) => {
   register('Notification', notificationSchema);
   register('Counter', counterSchema);
   register('EcomSettings', ecomSettingsSchema);
+  register('ContactQuery', contactQuerySchema);
   register('TransactionLog', transactionLogSchema);
   register('Integration', integrationSchema);
 

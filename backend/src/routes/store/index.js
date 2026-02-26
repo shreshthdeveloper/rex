@@ -2,7 +2,7 @@ const router = require('express').Router();
 const catalogCtrl = require('../../controllers/store/catalog.controller');
 const customerAuthCtrl = require('../../controllers/store/customerAuth.controller');
 const portalCtrl = require('../../controllers/store/portal.controller');
-const { resolveOrg, customerAuth } = require('../../middleware/auth');
+const { resolveOrg, customerAuth, optionalCustomerAuth } = require('../../middleware/auth');
 
 // All store routes require org resolution from URL param
 router.use('/:orgSlug', resolveOrg);
@@ -10,15 +10,17 @@ router.use('/:orgSlug', resolveOrg);
 // ─── Public Settings ───
 router.get('/:orgSlug/settings', catalogCtrl.getSettings);
 
-// ─── Public Catalog ───
-router.get('/:orgSlug/categories', catalogCtrl.getCategories);
+// ─── Public Catalog (with optional customer context for visibility) ───
+router.get('/:orgSlug/categories', optionalCustomerAuth, catalogCtrl.getCategories);
 router.get('/:orgSlug/brands', catalogCtrl.getBrands);
-router.get('/:orgSlug/products', catalogCtrl.getProducts);
-router.get('/:orgSlug/products/featured', catalogCtrl.getFeatured);
-router.get('/:orgSlug/products/new-arrivals', catalogCtrl.getNewArrivals);
-router.get('/:orgSlug/products/search', catalogCtrl.search);
-router.get('/:orgSlug/products/slug/:slug', catalogCtrl.getProductBySlug);
-router.get('/:orgSlug/products/:id', catalogCtrl.getProductById);
+router.get('/:orgSlug/products', optionalCustomerAuth, catalogCtrl.getProducts);
+router.get('/:orgSlug/products/featured', optionalCustomerAuth, catalogCtrl.getFeatured);
+router.get('/:orgSlug/products/new-arrivals', optionalCustomerAuth, catalogCtrl.getNewArrivals);
+router.get('/:orgSlug/products/search', optionalCustomerAuth, catalogCtrl.search);
+router.get('/:orgSlug/products/slug/:slug', optionalCustomerAuth, catalogCtrl.getProductBySlug);
+router.get('/:orgSlug/products/:id', optionalCustomerAuth, catalogCtrl.getProductById);
+router.get('/:orgSlug/warehouses', catalogCtrl.getWarehouses);
+router.post('/:orgSlug/contact-query', catalogCtrl.submitContactQuery);
 
 // ─── Customer Auth ───
 router.post('/:orgSlug/auth/register', customerAuthCtrl.register);

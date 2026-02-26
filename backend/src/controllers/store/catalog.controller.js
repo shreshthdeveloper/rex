@@ -8,8 +8,32 @@ const mongoose = require('mongoose');
  * Public storefront catalog — no auth required, resolveOrg middleware provides req.models
  */
 
+const redactProductPrice = (product) => {
+  if (!product) return product;
+  const cloned = { ...product };
+  delete cloned.basePrice;
+  delete cloned.compareAtPrice;
+  delete cloned.priceRange;
+  return cloned;
+};
+
+const redactVariantsPrice = (variants = []) => variants.map((variant) => {
+  const cloned = { ...variant };
+  delete cloned.basePrice;
+  delete cloned.compareAtPrice;
+  return cloned;
+});
+
 const getCategories = asyncHandler(async (req, res) => {
-  const categories = await req.models.Category.find({ isActive: true }).sort({ sortOrder: 1, name: 1 }).lean();
+  const filter = { isActive: true };
+  // Check if a customer is logged in (optional auth on store routes)
+  const isGuest = !req.customer;
+  if (isGuest) {
+    filter.hideFromGuests = { $ne: true };
+  } else {
+    filter.hideFromCustomers = { $ne: true };
+  }
+  const categories = await req.models.Category.find(filter).sort({ sortOrder: 1, name: 1 }).lean();
   // Build tree
   const map = {};
   const roots = [];
@@ -26,7 +50,14 @@ const getCategories = asyncHandler(async (req, res) => {
 });
 
 const getBrands = asyncHandler(async (req, res) => {
-  const brands = await req.models.Brand.find({ isActive: true }).sort({ name: 1 }).lean();
+  // Return brands that have at least one active product (regardless of brand.isActive)
+  const activeBrandIds = await req.models.Product.distinct('brand', { isActive: true, brand: { $ne: null } });
+  const brands = await req.models.Brand.find({
+    $or: [
+      { _id: { $in: activeBrandIds } },
+      { isActive: true },
+    ],
+  }).sort({ name: 1 }).lean();
   res.json(new ApiResponse(200, brands));
 });
 
@@ -36,7 +67,20 @@ const getProducts = asyncHandler(async (req, res) => {
 
   // Only show single and parent products in listing (variants are shown via their parent)
   const filter = { isActive: true, type: { $in: ['single', 'parent'] } };
-  if (category) filter.categories = category;
+
+  // Filter out products belonging to hidden categories
+  const isGuest = !req.customer;
+  const hiddenCats = await req.models.Category.find(
+    isGuest ? { hideFromGuests: true } : { hideFromCustomers: true },
+  ).distinct('_id');
+
+  // Build category query conditions — combine user-requested category with hidden-cat exclusion
+  const catConditions = [];
+  if (hiddenCats.length > 0) catConditions.push({ categories: { $nin: hiddenCats } });
+  if (category) catConditions.push({ categories: category });
+  if (catConditions.length === 1) Object.assign(filter, catConditions[0]);
+  else if (catConditions.length > 1) filter.$and = catConditions;
+
   if (brand) filter.brand = brand;
   if (featured === 'true') filter.isFeatured = true;
   if (tag) filter.tags = { $regex: tag, $options: 'i' };
@@ -147,7 +191,8 @@ const getProducts = asyncHandler(async (req, res) => {
     };
   });
 
-  res.json(new ApiResponse(200, { products: enriched, pagination: paginationMeta(total, pg, lim) }));
+  const responseProducts = isGuest ? enriched.map(redactProductPrice) : enriched;
+  res.json(new ApiResponse(200, { products: responseProducts, pagination: paginationMeta(total, pg, lim) }));
 });
 
 const getProductBySlug = asyncHandler(async (req, res) => {
@@ -158,6 +203,17 @@ const getProductBySlug = asyncHandler(async (req, res) => {
     .populate('unit', 'name shortName')
     .populate('taxSlab', 'name rate');
   if (!product) throw new ApiError(404, 'Product not found');
+
+  // Guard: block access if product belongs to a hidden category
+  const isGuest = !req.customer;
+  const productCategoryIds = (product.categories || []).map((c) => c._id || c);
+  if (productCategoryIds.length > 0) {
+    const hiddenCat = await req.models.Category.findOne({
+      _id: { $in: productCategoryIds },
+      ...(isGuest ? { hideFromGuests: true } : { hideFromCustomers: true }),
+    });
+    if (hiddenCat) throw new ApiError(404, 'Product not found');
+  }
 
   let variants = [];
   let availability = { inStock: false, availableQty: 0 };
@@ -198,7 +254,10 @@ const getProductBySlug = asyncHandler(async (req, res) => {
     availability = { inStock: available > 0, availableQty: available };
   }
 
-  res.json(new ApiResponse(200, { product, variants, availability }));
+  const responseProduct = isGuest ? redactProductPrice(product.toObject ? product.toObject() : product) : product;
+  const responseVariants = isGuest ? redactVariantsPrice(variants) : variants;
+
+  res.json(new ApiResponse(200, { product: responseProduct, variants: responseVariants, availability }));
 });
 
 const getProductById = asyncHandler(async (req, res) => {
@@ -208,6 +267,17 @@ const getProductById = asyncHandler(async (req, res) => {
     .populate('unit', 'name shortName')
     .populate('taxSlab', 'name rate');
   if (!product) throw new ApiError(404, 'Product not found');
+
+  // Guard: block access if product belongs to a hidden category
+  const isGuest = !req.customer;
+  const productCategoryIds = (product.categories || []).map((c) => c._id || c);
+  if (productCategoryIds.length > 0) {
+    const hiddenCat = await req.models.Category.findOne({
+      _id: { $in: productCategoryIds },
+      ...(isGuest ? { hideFromGuests: true } : { hideFromCustomers: true }),
+    });
+    if (hiddenCat) throw new ApiError(404, 'Product not found');
+  }
 
   let variants = [];
   let availability = { inStock: false, availableQty: 0 };
@@ -245,18 +315,28 @@ const getProductById = asyncHandler(async (req, res) => {
     availability = { inStock: available > 0, availableQty: available };
   }
 
-  res.json(new ApiResponse(200, { product, variants, availability }));
+  const responseProduct = isGuest ? redactProductPrice(product.toObject ? product.toObject() : product) : product;
+  const responseVariants = isGuest ? redactVariantsPrice(variants) : variants;
+
+  res.json(new ApiResponse(200, { product: responseProduct, variants: responseVariants, availability }));
 });
 
 const getFeatured = asyncHandler(async (req, res) => {
-  const products = await req.models.Product.find({ isActive: true, isFeatured: true, type: { $in: ['single', 'parent'] } })
-    .select('name sku slug basePrice compareAtPrice images brand type')
+  const isGuest = !req.customer;
+  const hiddenCats = await req.models.Category.find(
+    isGuest ? { hideFromGuests: true } : { hideFromCustomers: true },
+  ).distinct('_id');
+
+  const baseFilter = { isActive: true, isFeatured: true, type: { $in: ['single', 'parent'] } };
+  if (hiddenCats.length > 0) baseFilter.categories = { $nin: hiddenCats };
+
+  const products = await req.models.Product.find(baseFilter)
+    .select('name sku slug basePrice compareAtPrice images brand categories type')
     .populate('brand', 'name slug')
+    .populate('categories', 'name slug')
     .limit(20)
     .lean();
 
-  // Enrich with stock info
-  const productIds = products.map(p => p._id);
   const singleIds = products.filter(p => p.type === 'single').map(p => p._id);
   const parentIds = products.filter(p => p.type === 'parent').map(p => p._id);
 
@@ -270,34 +350,97 @@ const getFeatured = asyncHandler(async (req, res) => {
   }
 
   let variantPriceMap = {};
+  let variantStockMap = {};
   if (parentIds.length > 0) {
     const priceAgg = await req.models.Product.aggregate([
       { $match: { parentProduct: { $in: parentIds }, isActive: true, type: 'variant' } },
       { $group: { _id: '$parentProduct', minPrice: { $min: '$basePrice' }, maxPrice: { $max: '$basePrice' } } },
     ]);
     priceAgg.forEach(p => { variantPriceMap[p._id.toString()] = { min: p.minPrice, max: p.maxPrice }; });
+
+    const variantIds = await req.models.Product.find({ parentProduct: { $in: parentIds }, isActive: true, type: 'variant' }).distinct('_id');
+    if (variantIds.length > 0) {
+      const vStockAgg = await req.models.ProductStock.aggregate([
+        { $match: { product: { $in: variantIds } } },
+        { $lookup: { from: req.models.Product.collection.name, localField: 'product', foreignField: '_id', as: 'prod' } },
+        { $unwind: '$prod' },
+        { $group: { _id: '$prod.parentProduct', totalStock: { $sum: '$quantity' }, totalReserved: { $sum: '$reservedQuantity' } } },
+      ]);
+      vStockAgg.forEach(s => { variantStockMap[s._id.toString()] = Math.max(0, s.totalStock - s.totalReserved); });
+    }
   }
 
   const enriched = products.map(p => {
     const id = p._id.toString();
     if (p.type === 'parent') {
-      return { ...p, priceRange: variantPriceMap[id] || null, inStock: true };
+      return { ...p, priceRange: variantPriceMap[id] || null, availableQty: variantStockMap[id] || 0, inStock: (variantStockMap[id] || 0) > 0 };
     }
     return { ...p, availableQty: stockMap[id] || 0, inStock: (stockMap[id] || 0) > 0 };
   });
 
-  res.json(new ApiResponse(200, enriched));
+  const responseProducts = isGuest ? enriched.map(redactProductPrice) : enriched;
+  res.json(new ApiResponse(200, responseProducts));
 });
 
 const getNewArrivals = asyncHandler(async (req, res) => {
   const lim = Math.min(Number(req.query.limit) || 12, 40);
-  const products = await req.models.Product.find({ isActive: true, type: { $in: ['single', 'parent'] } })
-    .select('name sku slug basePrice compareAtPrice images brand type')
+  const isGuest = !req.customer;
+  const hiddenCats = await req.models.Category.find(
+    isGuest ? { hideFromGuests: true } : { hideFromCustomers: true },
+  ).distinct('_id');
+
+  const baseFilter = { isActive: true, type: { $in: ['single', 'parent'] } };
+  if (hiddenCats.length > 0) baseFilter.categories = { $nin: hiddenCats };
+
+  const products = await req.models.Product.find(baseFilter)
+    .select('name sku slug basePrice compareAtPrice images brand categories type')
     .populate('brand', 'name slug')
+    .populate('categories', 'name slug')
     .sort({ createdAt: -1 })
     .limit(lim)
     .lean();
-  res.json(new ApiResponse(200, products));
+
+  const singleIds = products.filter(p => p.type === 'single').map(p => p._id);
+  const parentIds = products.filter(p => p.type === 'parent').map(p => p._id);
+  let stockMap = {};
+  let varPriceMap = {};
+  let varStockMap = {};
+  if (singleIds.length > 0) {
+    const agg = await req.models.ProductStock.aggregate([
+      { $match: { product: { $in: singleIds } } },
+      { $group: { _id: '$product', total: { $sum: '$quantity' }, reserved: { $sum: '$reservedQuantity' } } },
+    ]);
+    agg.forEach(s => { stockMap[s._id.toString()] = Math.max(0, s.total - s.reserved); });
+  }
+  if (parentIds.length > 0) {
+    const priceAgg = await req.models.Product.aggregate([
+      { $match: { parentProduct: { $in: parentIds }, isActive: true, type: 'variant' } },
+      { $group: { _id: '$parentProduct', minPrice: { $min: '$basePrice' }, maxPrice: { $max: '$basePrice' } } },
+    ]);
+    priceAgg.forEach(p => { varPriceMap[p._id.toString()] = { min: p.minPrice, max: p.maxPrice }; });
+
+    const variantIds = await req.models.Product.find({ parentProduct: { $in: parentIds }, isActive: true, type: 'variant' }).distinct('_id');
+    if (variantIds.length > 0) {
+      const stockAgg = await req.models.ProductStock.aggregate([
+        { $match: { product: { $in: variantIds } } },
+        { $lookup: { from: req.models.Product.collection.name, localField: 'product', foreignField: '_id', as: 'prod' } },
+        { $unwind: '$prod' },
+        { $group: { _id: '$prod.parentProduct', totalStock: { $sum: '$quantity' }, totalReserved: { $sum: '$reservedQuantity' } } },
+      ]);
+      stockAgg.forEach(s => { varStockMap[s._id.toString()] = Math.max(0, s.totalStock - s.totalReserved); });
+    }
+  }
+
+  const enriched = products.map(p => {
+    const id = p._id.toString();
+    if (p.type === 'parent') {
+      return { ...p, priceRange: varPriceMap[id] || null, availableQty: varStockMap[id] || 0, inStock: (varStockMap[id] || 0) > 0 };
+    }
+    return { ...p, availableQty: stockMap[id] || 0, inStock: (stockMap[id] || 0) > 0 };
+  });
+
+  const responseProducts = isGuest ? enriched.map(redactProductPrice) : enriched;
+  res.json(new ApiResponse(200, responseProducts));
 });
 
 const getSettings = asyncHandler(async (req, res) => {
@@ -306,10 +449,48 @@ const getSettings = asyncHandler(async (req, res) => {
   res.json(new ApiResponse(200, settings));
 });
 
+const getWarehouses = asyncHandler(async (req, res) => {
+  const warehouses = await req.models.Warehouse.find({ isActive: true })
+    .select('name code city state')
+    .sort({ name: 1 })
+    .lean();
+  res.json(new ApiResponse(200, warehouses));
+});
+
+const submitContactQuery = asyncHandler(async (req, res) => {
+  const { name, email, phone, subject, message, sourcePage } = req.body || {};
+
+  if (!name || !email || !message) {
+    throw new ApiError(400, 'Name, email and message are required');
+  }
+
+  const query = await req.models.ContactQuery.create({
+    name: String(name).trim(),
+    email: String(email).trim().toLowerCase(),
+    phone: phone ? String(phone).trim() : '',
+    subject: subject ? String(subject).trim() : '',
+    message: String(message).trim(),
+    sourcePage: sourcePage ? String(sourcePage).trim() : 'contact',
+    meta: {
+      ip: req.ip || '',
+      userAgent: req.headers['user-agent'] || '',
+    },
+  });
+
+  res.status(201).json(new ApiResponse(201, { id: query._id }, 'Query submitted successfully'));
+});
+
 const search = asyncHandler(async (req, res) => {
   const { q, page, limit } = req.query;
   if (!q) return res.json(new ApiResponse(200, { products: [], pagination: paginationMeta(0, 1, 20) }));
   const { skip, limit: lim, page: pg } = paginate(page, limit);
+
+  // Exclude products from hidden categories (same logic as getProducts)
+  const isGuest = !req.customer;
+  const hiddenCats = await req.models.Category.find(
+    isGuest ? { hideFromGuests: true } : { hideFromCustomers: true },
+  ).distinct('_id');
+
   const filter = {
     isActive: true,
     type: { $in: ['single', 'parent'] },
@@ -320,17 +501,49 @@ const search = asyncHandler(async (req, res) => {
       { tags: { $regex: q, $options: 'i' } },
     ],
   };
+  if (hiddenCats.length > 0) {
+    filter.categories = { $nin: hiddenCats };
+  }
   const [products, total] = await Promise.all([
     req.models.Product.find(filter)
-      .select('name sku slug basePrice compareAtPrice images brand type')
+      .select('name sku slug basePrice compareAtPrice images brand categories type')
       .populate('brand', 'name slug')
-      .sort({ name: 1 }).skip(skip).limit(lim),
+      .populate('categories', 'name slug')
+      .sort({ name: 1 }).skip(skip).limit(lim)
+      .lean(),
     req.models.Product.countDocuments(filter),
   ]);
-  res.json(new ApiResponse(200, { products, pagination: paginationMeta(total, pg, lim) }));
+
+  // Enrich with stock
+  const singleIds = products.filter(p => p.type === 'single').map(p => p._id);
+  const parentIds = products.filter(p => p.type === 'parent').map(p => p._id);
+  let stockMap = {}, varPriceMap = {};
+  if (singleIds.length > 0) {
+    const agg = await req.models.ProductStock.aggregate([
+      { $match: { product: { $in: singleIds } } },
+      { $group: { _id: '$product', total: { $sum: '$quantity' }, reserved: { $sum: '$reservedQuantity' } } },
+    ]);
+    agg.forEach(s => { stockMap[s._id.toString()] = Math.max(0, s.total - s.reserved); });
+  }
+  if (parentIds.length > 0) {
+    const priceAgg = await req.models.Product.aggregate([
+      { $match: { parentProduct: { $in: parentIds }, isActive: true, type: 'variant' } },
+      { $group: { _id: '$parentProduct', minPrice: { $min: '$basePrice' }, maxPrice: { $max: '$basePrice' } } },
+    ]);
+    priceAgg.forEach(p => { varPriceMap[p._id.toString()] = { min: p.minPrice, max: p.maxPrice }; });
+  }
+  const enriched = products.map(p => {
+    const id = p._id.toString();
+    if (p.type === 'parent') return { ...p, priceRange: varPriceMap[id] || null, inStock: true };
+    return { ...p, availableQty: stockMap[id] || 0, inStock: (stockMap[id] || 0) > 0 };
+  });
+
+  const responseProducts = isGuest ? enriched.map(redactProductPrice) : enriched;
+
+  res.json(new ApiResponse(200, { products: responseProducts, pagination: paginationMeta(total, pg, lim) }));
 });
 
 module.exports = {
   getCategories, getBrands, getProducts, getProductBySlug, getProductById,
-  getFeatured, getNewArrivals, search, getSettings,
+  getFeatured, getNewArrivals, search, getSettings, getWarehouses, submitContactQuery,
 };

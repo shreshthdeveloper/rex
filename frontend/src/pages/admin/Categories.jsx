@@ -4,7 +4,7 @@ import { PageHeader, Button, Modal, Input, Select, DataTable, Badge, ConfirmDial
 import { categoriesAPI } from '../../api';
 import { FolderTree, Plus, Edit, Trash2, GripVertical, ArrowUpDown, Image } from 'lucide-react';
 
-const emptyForm = { name: '', slug: '', description: '', parentCategory: '', image: '', sortOrder: 0, isActive: true };
+const emptyForm = { name: '', slug: '', description: '', parentCategory: '', image: '', sortOrder: 0, isActive: true, hideFromCustomers: false, hideFromGuests: false };
 
 export default function Categories() {
   const toast = useToast();
@@ -49,6 +49,8 @@ export default function Categories() {
       image: c.image || '',
       sortOrder: c.sortOrder || 0,
       isActive: c.isActive !== false,
+      hideFromCustomers: !!c.hideFromCustomers,
+      hideFromGuests: !!c.hideFromGuests,
     });
     setModalOpen(true);
   };
@@ -192,6 +194,8 @@ export default function Categories() {
       return pid ? <Badge color="purple">{r.parentCategory?.name || parentMap[pid] || 'Parent'}</Badge> : <span className="text-gray-600">—</span>;
     }},
     { key: 'sortOrder', label: 'Order', render: (r) => <span className="text-slate-500">{r.sortOrder ?? '—'}</span> },
+    { key: 'hideFromCustomers', label: 'Hide Customers', render: (r) => <Badge color={r.hideFromCustomers ? 'red' : 'green'}>{r.hideFromCustomers ? 'ON' : 'OFF'}</Badge> },
+    { key: 'hideFromGuests', label: 'Hide Guests', render: (r) => <Badge color={r.hideFromGuests ? 'red' : 'green'}>{r.hideFromGuests ? 'ON' : 'OFF'}</Badge> },
     { key: 'isActive', label: 'Status', render: (r) => <Badge color={r.isActive !== false ? 'green' : 'red'}>{r.isActive !== false ? 'Active' : 'Inactive'}</Badge> },
   ];
 
@@ -247,6 +251,14 @@ export default function Categories() {
           <label className="flex items-center gap-2 cursor-pointer">
             <input type="checkbox" checked={form.isActive} onChange={setChecked('isActive')} className="w-4 h-4 rounded border-gray-600 text-violet-600 focus:ring-violet-500 bg-transparent" />
             <span className="text-sm text-slate-600">Active</span>
+          </label>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" checked={form.hideFromCustomers} onChange={setChecked('hideFromCustomers')} className="w-4 h-4 rounded border-gray-600 text-orange-500 focus:ring-orange-400 bg-transparent" />
+            <span className="text-sm text-slate-600">Hide from Customers</span>
+          </label>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" checked={form.hideFromGuests} onChange={setChecked('hideFromGuests')} className="w-4 h-4 rounded border-gray-600 text-orange-500 focus:ring-orange-400 bg-transparent" />
+            <span className="text-sm text-slate-600">Hide from Guests</span>
           </label>
         </div>
       </Modal>

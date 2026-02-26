@@ -18,10 +18,16 @@ const round2 = (v) => Math.round((Number(v) || 0) * 100) / 100;
 // ─── Orders ────────────────────────────────────────────────────────────────────
 
 const myOrders = asyncHandler(async (req, res) => {
-  const { page, limit, status } = req.query;
+  const { page, limit, status, startDate, endDate, q } = req.query;
   const { skip, limit: lim, page: pg } = paginate(page, limit);
   const filter = { customer: req.customer._id };
   if (status) filter.status = status;
+  if (startDate || endDate) {
+    filter.createdAt = {};
+    if (startDate) filter.createdAt.$gte = new Date(startDate);
+    if (endDate) { const e = new Date(endDate); e.setHours(23, 59, 59, 999); filter.createdAt.$lte = e; }
+  }
+  if (q) filter.orderNumber = { $regex: q, $options: 'i' };
   const [orders, total] = await Promise.all([
     req.models.Order.find(filter)
       .populate('warehouse', 'name')
@@ -365,11 +371,19 @@ const myReturns = asyncHandler(async (req, res) => {
 // ─── Ledger / Balance / Payments / Topups / Statement ──────────────────────────
 
 const myLedger = asyncHandler(async (req, res) => {
-  const { page, limit } = req.query;
+  const { page, limit, type, startDate, endDate, q } = req.query;
   const { skip, limit: lim, page: pg } = paginate(page, limit);
+  const filter = { customer: req.customer._id };
+  if (type) filter.transactionType = type;
+  if (startDate || endDate) {
+    filter.createdAt = {};
+    if (startDate) filter.createdAt.$gte = new Date(startDate);
+    if (endDate) { const e = new Date(endDate); e.setHours(23, 59, 59, 999); filter.createdAt.$lte = e; }
+  }
+  if (q) filter.referenceNumber = { $regex: q, $options: 'i' };
   const [entries, total] = await Promise.all([
-    req.models.CustomerLedger.find({ customer: req.customer._id }).sort({ createdAt: -1 }).skip(skip).limit(lim),
-    req.models.CustomerLedger.countDocuments({ customer: req.customer._id }),
+    req.models.CustomerLedger.find(filter).sort({ createdAt: -1 }).skip(skip).limit(lim).lean(),
+    req.models.CustomerLedger.countDocuments(filter),
   ]);
   res.json(new ApiResponse(200, { entries, pagination: paginationMeta(total, pg, lim) }));
 });
@@ -384,13 +398,26 @@ const myBalance = asyncHandler(async (req, res) => {
 });
 
 const myPayments = asyncHandler(async (req, res) => {
-  const { page, limit } = req.query;
+  const { page, limit, method, startDate, endDate, q } = req.query;
   const { skip, limit: lim, page: pg } = paginate(page, limit);
+  const filter = { customer: req.customer._id };
+  if (method) filter.method = method;
+  if (startDate || endDate) {
+    filter.createdAt = {};
+    if (startDate) filter.createdAt.$gte = new Date(startDate);
+    if (endDate) { const e = new Date(endDate); e.setHours(23, 59, 59, 999); filter.createdAt.$lte = e; }
+  }
+  if (q) {
+    const asNum = Number(q);
+    filter.$or = isNaN(asNum)
+      ? [{ referenceNumber: { $regex: q, $options: 'i' } }]
+      : [{ referenceNumber: { $regex: q, $options: 'i' } }, { amount: asNum }];
+  }
   const [payments, total] = await Promise.all([
-    req.models.OrderPayment.find({ customer: req.customer._id })
+    req.models.OrderPayment.find(filter)
       .populate('order', 'orderNumber grandTotal')
-      .sort({ createdAt: -1 }).skip(skip).limit(lim),
-    req.models.OrderPayment.countDocuments({ customer: req.customer._id }),
+      .sort({ createdAt: -1 }).skip(skip).limit(lim).lean(),
+    req.models.OrderPayment.countDocuments(filter),
   ]);
   res.json(new ApiResponse(200, { payments, pagination: paginationMeta(total, pg, lim) }));
 });
@@ -513,8 +540,15 @@ const validateCoupon = asyncHandler(async (req, res) => {
 // ─── Stock Check (Cart Validation) ─────────────────────────────────────────────
 
 const stockCheck = asyncHandler(async (req, res) => {
-  const { items } = req.body;
+  const { items, warehouseId } = req.body;
   if (!Array.isArray(items) || !items.length) throw new ApiError(400, 'Items array is required');
+
+  // Validate warehouseId if provided
+  let warehouse = null;
+  if (warehouseId) {
+    warehouse = await req.models.Warehouse.findById(warehouseId).select('name');
+    if (!warehouse) throw new ApiError(400, 'Warehouse not found');
+  }
 
   const results = [];
   for (const item of items) {
@@ -528,8 +562,11 @@ const stockCheck = asyncHandler(async (req, res) => {
       continue;
     }
 
+    const matchStage = { product: product._id };
+    if (warehouseId) matchStage.warehouse = new (require('mongoose').Types.ObjectId)(warehouseId);
+
     const stockAgg = await req.models.ProductStock.aggregate([
-      { $match: { product: product._id } },
+      { $match: matchStage },
       { $group: { _id: null, total: { $sum: '$quantity' }, reserved: { $sum: '$reservedQuantity' } } },
     ]);
     const availableQty = stockAgg[0] ? Math.max(0, stockAgg[0].total - stockAgg[0].reserved) : 0;
@@ -543,6 +580,7 @@ const stockCheck = asyncHandler(async (req, res) => {
       availableQty,
       available: availableQty >= requestedQty,
       reason: availableQty >= requestedQty ? 'In stock' : `Only ${availableQty} available`,
+      ...(warehouse ? { warehouse: { _id: warehouse._id, name: warehouse.name } } : {}),
     });
   }
   res.json(new ApiResponse(200, results));

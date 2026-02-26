@@ -1,60 +1,71 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import toast from 'react-hot-toast';
+import { useAuth } from './AuthContext';
 
 const CartContext = createContext(null);
+export const useCart = () => useContext(CartContext);
+
 const STORAGE_KEY = 'ecom_cart';
 
 function loadCart() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch { return []; }
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; } catch { return []; }
 }
 
 export function CartProvider({ children }) {
   const [items, setItems] = useState(loadCart);
+  const { isAuthenticated } = useAuth();
+
+  useEffect(() => { localStorage.setItem(STORAGE_KEY, JSON.stringify(items)); }, [items]);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
-  }, [items]);
-
-  const addItem = useCallback((product, qty = 1) => {
+    if (isAuthenticated) return;
     setItems((prev) => {
-      const idx = prev.findIndex((i) => i.productId === product._id);
-      if (idx >= 0) {
-        const copy = [...prev];
-        copy[idx] = { ...copy[idx], quantity: copy[idx].quantity + qty };
-        return copy;
+      const hasPrices = prev.some((item) => item.price != null);
+      if (!hasPrices) return prev;
+      return prev.map((item) => ({ ...item, price: null }));
+    });
+  }, [isAuthenticated]);
+
+  const addItem = useCallback((product, variant, qty = 1) => {
+    setItems((prev) => {
+      const id = variant?._id || product._id;
+      const existing = prev.find((i) => i.id === id);
+      if (existing) {
+        toast.success('Quantity updated');
+        return prev.map((i) => i.id === id ? { ...i, quantity: i.quantity + qty } : i);
       }
+      toast.success('Added to cart');
       return [...prev, {
-        productId: product._id,
-        name: product.name,
-        sku: product.sku,
-        image: product.images?.[0]?.url || '',
-        price: product.basePrice,
+        id,
+        productId: variant?._id || product._id,
+        name: variant ? `${product.name} — ${variant.variantValue}` : product.name,
+        sku: variant?.sku || product.sku,
+        image: variant?.images?.[0]?.url || product.images?.[0]?.url || '',
+        price: variant?.basePrice || product.basePrice,
         quantity: qty,
+        slug: product.slug,
       }];
     });
   }, []);
 
-  const removeItem = useCallback((productId) => {
-    setItems((prev) => prev.filter((i) => i.productId !== productId));
+  const updateQuantity = useCallback((id, qty) => {
+    if (qty < 1) return;
+    setItems((prev) => prev.map((i) => i.id === id ? { ...i, quantity: qty } : i));
   }, []);
 
-  const updateQty = useCallback((productId, qty) => {
-    if (qty < 1) return removeItem(productId);
-    setItems((prev) => prev.map((i) => i.productId === productId ? { ...i, quantity: qty } : i));
-  }, [removeItem]);
+  const removeItem = useCallback((id) => {
+    setItems((prev) => prev.filter((i) => i.id !== id));
+    toast.success('Removed from cart');
+  }, []);
 
-  const clearCart = useCallback(() => setItems([]), []);
+  const clearCart = useCallback(() => { setItems([]); }, []);
 
   const totalItems = items.reduce((s, i) => s + i.quantity, 0);
-  const totalPrice = items.reduce((s, i) => s + i.price * i.quantity, 0);
+  const subtotal = items.reduce((s, i) => s + (Number(i.price) || 0) * i.quantity, 0);
 
   return (
-    <CartContext.Provider value={{ items, addItem, removeItem, updateQty, clearCart, totalItems, totalPrice }}>
+    <CartContext.Provider value={{ items, addItem, updateQuantity, removeItem, clearCart, totalItems, subtotal }}>
       {children}
     </CartContext.Provider>
   );
 }
-
-export const useCart = () => useContext(CartContext);

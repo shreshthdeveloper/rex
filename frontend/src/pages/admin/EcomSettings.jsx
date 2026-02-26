@@ -1,13 +1,13 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useToast } from '../../context/ToastContext';
-import { ecomSettingsAPI, uploadAPI } from '../../api';
+import { ecomSettingsAPI, ecomQueriesAPI, uploadAPI } from '../../api';
 import {
   GlassCard, Button, Input, Loader, TabList, PageHeader,
 } from '../../components/ui';
 import {
   Settings, Palette, Image, Layout, Megaphone, FileText, Globe,
   Plus, Trash2, GripVertical, Eye, EyeOff, Save, ChevronDown, ChevronUp,
-  Upload, X,
+  Upload, X, Layers, ShieldCheck, ToggleLeft, ToggleRight, MousePointerClick,
 } from 'lucide-react';
 
 const TABS = [
@@ -17,7 +17,27 @@ const TABS = [
   { id: 'marquee', label: 'Marquee & Alerts' },
   { id: 'terms', label: 'T&C & Docs' },
   { id: 'footer', label: 'Footer & Social' },
+  { id: 'queries', label: 'Queries' },
+  { id: 'modals', label: 'Modal Settings' },
 ];
+
+const MODAL_PAGES = [
+  { value: 'all', label: 'All Pages' },
+  { value: 'home', label: 'Home' },
+  { value: 'products', label: 'Products' },
+  { value: 'product_detail', label: 'Product Detail' },
+  { value: 'cart', label: 'Cart' },
+  { value: 'checkout', label: 'Checkout' },
+  { value: 'account', label: 'Account' },
+];
+
+const defaultModal = {
+  title: '', body: '', showOn: ['all'], trigger: 'on_load', triggerDelay: 0,
+  frequency: 'once_per_session', isEnabled: true, formFields: [], buttons: [],
+  bgColor: '', textColor: '', maxWidth: 'md',
+};
+const defaultModalButton = { label: '', action: 'close', url: '', style: 'primary' };
+const defaultModalField = { label: '', placeholder: '', fieldType: 'text', options: [], required: false };
 
 const defaultBanner = { title: '', subtitle: '', image: '', link: '', isActive: true, sortOrder: 0 };
 const defaultDoc = { name: '', description: '', required: false };
@@ -131,6 +151,10 @@ export default function EcomSettings() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [data, setData] = useState({});
+  const [queriesLoading, setQueriesLoading] = useState(false);
+  const [queries, setQueries] = useState([]);
+  const [queryStatus, setQueryStatus] = useState('');
+  const [querySearch, setQuerySearch] = useState('');
 
   const fetchSettings = useCallback(async () => {
     setLoading(true);
@@ -145,6 +169,22 @@ export default function EcomSettings() {
   }, []);
 
   useEffect(() => { fetchSettings(); }, [fetchSettings]);
+
+  const loadQueries = useCallback(async () => {
+    setQueriesLoading(true);
+    try {
+      const res = await ecomQueriesAPI.list({ page: 1, limit: 100, status: queryStatus || undefined, search: querySearch || undefined });
+      setQueries(res.data?.queries || []);
+    } catch (err) {
+      toast.error(err.message || 'Failed to load queries');
+    } finally {
+      setQueriesLoading(false);
+    }
+  }, [queryStatus, querySearch]);
+
+  useEffect(() => {
+    if (tab === 'queries') loadQueries();
+  }, [tab, loadQueries]);
 
   const set = (key, val) => setData((d) => ({ ...d, [key]: val }));
 
@@ -497,6 +537,358 @@ export default function EcomSettings() {
             </div>
           </div>
         </GlassCard>
+      )}
+
+      {/* ══════════ QUERIES ══════════ */}
+      {tab === 'queries' && (
+        <GlassCard>
+          <div className="space-y-4">
+            <div className="flex flex-col md:flex-row md:items-end gap-3">
+              <Input label="Search" value={querySearch} onChange={(e) => setQuerySearch(e.target.value)} placeholder="Search name, email, subject..." />
+              <div className="w-full md:w-52">
+                <label className="text-xs font-medium text-slate-500 block mb-1.5">Status</label>
+                <select value={queryStatus} onChange={(e) => setQueryStatus(e.target.value)} className="glass-input w-full px-3 py-2 text-sm rounded-lg">
+                  <option value="">All</option>
+                  <option value="new">New</option>
+                  <option value="in_progress">In Progress</option>
+                  <option value="resolved">Resolved</option>
+                </select>
+              </div>
+              <Button onClick={loadQueries} variant="ghost">Refresh</Button>
+            </div>
+
+            {queriesLoading ? (
+              <Loader />
+            ) : queries.length === 0 ? (
+              <p className="text-sm text-slate-500">No messages found.</p>
+            ) : (
+              <div className="space-y-3">
+                {queries.map((q) => (
+                  <div key={q._id} className="rounded-xl border border-violet-100 bg-violet-50/40 p-4">
+                    <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-2 mb-2">
+                      <div>
+                        <div className="text-sm font-semibold text-slate-800">{q.subject || 'General Inquiry'}</div>
+                        <div className="text-xs text-slate-500">{q.name} • {q.email}{q.phone ? ` • ${q.phone}` : ''}</div>
+                        <div className="text-[11px] text-gray-500 mt-0.5">{new Date(q.createdAt).toLocaleString('en-IN')}</div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <select
+                          value={q.status}
+                          onChange={async (e) => {
+                            try {
+                              await ecomQueriesAPI.updateStatus(q._id, e.target.value);
+                              setQueries((prev) => prev.map((item) => item._id === q._id ? { ...item, status: e.target.value } : item));
+                              toast.success('Status updated');
+                            } catch (err) {
+                              toast.error(err.message || 'Failed to update status');
+                            }
+                          }}
+                          className="glass-input px-3 py-1.5 text-xs rounded-lg"
+                        >
+                          <option value="new">New</option>
+                          <option value="in_progress">In Progress</option>
+                          <option value="resolved">Resolved</option>
+                        </select>
+                      </div>
+                    </div>
+                    <p className="text-sm text-slate-600 whitespace-pre-wrap">{q.message}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </GlassCard>
+      )}
+
+      {/* ══════════ MODAL SETTINGS ══════════ */}
+      {tab === 'modals' && (
+        <div className="space-y-4">
+
+          {/* Age Verification */}
+          <GlassCard>
+            <h3 className="text-sm font-semibold text-slate-800 flex items-center gap-2 mb-4"><ShieldCheck size={14} className="text-violet-600" /> Age Verification</h3>
+            <div className="space-y-4">
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => set('ageVerificationEnabled', !data.ageVerificationEnabled)}
+                  className={`text-2xl ${data.ageVerificationEnabled ? 'text-cyan-500' : 'text-slate-300'}`}
+                >
+                  {data.ageVerificationEnabled ? <ToggleRight size={28} /> : <ToggleLeft size={28} />}
+                </button>
+                <span className="text-sm font-medium text-slate-700">Enable Age Verification Gate</span>
+              </div>
+              {data.ageVerificationEnabled && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2">
+                  <Input
+                    label="Modal Title"
+                    value={data.ageVerificationTitle || ''}
+                    onChange={(e) => set('ageVerificationTitle', e.target.value)}
+                    placeholder="Age Verification Required"
+                  />
+                  <Input
+                    label="Minimum Age"
+                    type="number"
+                    value={data.ageVerificationMinAge ?? 18}
+                    onChange={(e) => set('ageVerificationMinAge', Number(e.target.value))}
+                    min={1} max={99}
+                  />
+                  <div className="md:col-span-2">
+                    <label className="text-xs font-medium text-slate-500 block mb-1">Verification Message</label>
+                    <textarea
+                      value={data.ageVerificationMessage || ''}
+                      onChange={(e) => set('ageVerificationMessage', e.target.value)}
+                      rows={2}
+                      className="w-full glass-input p-3 text-sm rounded-lg resize-none"
+                      placeholder="You must be at least 18 years old to access this website..."
+                    />
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className="text-xs font-medium text-slate-500 block mb-1">Lockout Message (shown on locked page)</label>
+                    <textarea
+                      value={data.ageVerificationLockMessage || ''}
+                      onChange={(e) => set('ageVerificationLockMessage', e.target.value)}
+                      rows={2}
+                      className="w-full glass-input p-3 text-sm rounded-lg resize-none"
+                      placeholder="Access to this website is restricted to users aged 18 and above."
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+          </GlassCard>
+
+          {/* Custom Modals List */}
+          <GlassCard>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-semibold text-slate-800 flex items-center gap-2"><Layers size={14} className="text-violet-600" /> Custom Modals</h3>
+              <Button variant="ghost" size="sm" onClick={() => set('modals', [...(data.modals || []), { ...defaultModal }])}>
+                <Plus size={12} /> Add Modal
+              </Button>
+            </div>
+
+            {(!data.modals || data.modals.length === 0) && (
+              <p className="text-xs text-gray-500">No custom modals yet. Click "Add Modal" to create one.</p>
+            )}
+
+            <div className="space-y-4">
+              {(data.modals || []).map((modal, mi) => {
+                const updateModal = (key, val) => {
+                  const updated = [...data.modals];
+                  updated[mi] = { ...updated[mi], [key]: val };
+                  set('modals', updated);
+                };
+                const removeModal = () => {
+                  set('modals', data.modals.filter((_, i) => i !== mi));
+                };
+
+                return (
+                  <div key={mi} className="border border-violet-100 rounded-xl bg-violet-50/30 overflow-hidden">
+                    {/* Header */}
+                    <div className="flex items-center justify-between px-4 py-3 bg-violet-50/60 border-b border-violet-100">
+                      <div className="flex items-center gap-3">
+                        <button
+                          type="button"
+                          onClick={() => updateModal('isEnabled', !modal.isEnabled)}
+                          className={`${modal.isEnabled ? 'text-cyan-500' : 'text-slate-300'}`}
+                        >
+                          {modal.isEnabled ? <ToggleRight size={22} /> : <ToggleLeft size={22} />}
+                        </button>
+                        <span className="text-sm font-semibold text-slate-800">{modal.title || `Modal ${mi + 1}`}</span>
+                        {!modal.isEnabled && <span className="text-[10px] bg-slate-200 text-slate-500 rounded-full px-2 py-0.5">Disabled</span>}
+                      </div>
+                      <button onClick={removeModal} className="text-red-400/60 hover:text-red-400"><Trash2 size={14} /></button>
+                    </div>
+
+                    {/* Body */}
+                    <div className="p-4 space-y-4">
+                      {/* Basic */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <Input
+                          label="Title"
+                          value={modal.title || ''}
+                          onChange={(e) => updateModal('title', e.target.value)}
+                          placeholder="Modal Title"
+                        />
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="text-xs font-medium text-slate-500 block mb-1">Trigger</label>
+                            <select value={modal.trigger || 'on_load'} onChange={(e) => updateModal('trigger', e.target.value)} className="glass-input w-full px-3 py-2 text-sm rounded-lg">
+                              <option value="on_load">On Page Load</option>
+                              <option value="on_exit">On Exit Intent</option>
+                              <option value="on_scroll">On Scroll</option>
+                              <option value="manual">Manual / API</option>
+                            </select>
+                          </div>
+                          <Input
+                            label="Delay (ms)"
+                            type="number"
+                            min={0}
+                            value={modal.triggerDelay ?? 0}
+                            onChange={(e) => updateModal('triggerDelay', Number(e.target.value))}
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="text-xs font-medium text-slate-500 block mb-1">Body / Message</label>
+                        <textarea
+                          value={modal.body || ''}
+                          onChange={(e) => updateModal('body', e.target.value)}
+                          rows={2}
+                          className="w-full glass-input p-3 text-sm rounded-lg resize-none"
+                          placeholder="Modal content / message..."
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        <div>
+                          <label className="text-xs font-medium text-slate-500 block mb-1">Frequency</label>
+                          <select value={modal.frequency || 'once_per_session'} onChange={(e) => updateModal('frequency', e.target.value)} className="glass-input w-full px-3 py-2 text-sm rounded-lg">
+                            <option value="every_visit">Every Visit</option>
+                            <option value="once_per_session">Once Per Session</option>
+                            <option value="once">Once Ever</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="text-xs font-medium text-slate-500 block mb-1">Max Width</label>
+                          <select value={modal.maxWidth || 'md'} onChange={(e) => updateModal('maxWidth', e.target.value)} className="glass-input w-full px-3 py-2 text-sm rounded-lg">
+                            <option value="sm">Small</option>
+                            <option value="md">Medium</option>
+                            <option value="lg">Large</option>
+                            <option value="xl">X-Large</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="text-xs font-medium text-slate-500 block mb-1">Background Color</label>
+                          <Input value={modal.bgColor || ''} onChange={(e) => updateModal('bgColor', e.target.value)} placeholder="#ffffff or css color" />
+                        </div>
+                      </div>
+
+                      {/* Show On Pages */}
+                      <div>
+                        <label className="text-xs font-medium text-slate-500 block mb-2">Show On Pages</label>
+                        <div className="flex flex-wrap gap-2">
+                          {MODAL_PAGES.map((pg) => {
+                            const isChecked = (modal.showOn || ['all']).includes(pg.value);
+                            return (
+                              <label key={pg.value} className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border cursor-pointer transition-colors ${
+                                isChecked ? 'bg-cyan-500 text-white border-cyan-500' : 'border-violet-200 text-slate-600 hover:border-cyan-300'
+                              }`}>
+                                <input
+                                  type="checkbox"
+                                  className="hidden"
+                                  checked={isChecked}
+                                  onChange={(e) => {
+                                    const cur = modal.showOn || ['all'];
+                                    const next = e.target.checked ? [...cur, pg.value] : cur.filter((v) => v !== pg.value);
+                                    updateModal('showOn', next.length ? next : ['all']);
+                                  }}
+                                />
+                                {pg.label}
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Buttons */}
+                      <div className="border-t border-violet-100 pt-3">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-xs font-semibold text-slate-700 flex items-center gap-1"><MousePointerClick size={12} /> Buttons</span>
+                          <button
+                            type="button"
+                            className="text-xs text-cyan-600 hover:underline"
+                            onClick={() => updateModal('buttons', [...(modal.buttons || []), { ...defaultModalButton }])}
+                          >
+                            + Add Button
+                          </button>
+                        </div>
+                        <div className="space-y-2">
+                          {(modal.buttons || []).map((btn, bi) => {
+                            const updateBtn = (k, v) => {
+                              const arr = [...modal.buttons];
+                              arr[bi] = { ...arr[bi], [k]: v };
+                              updateModal('buttons', arr);
+                            };
+                            return (
+                              <div key={bi} className="grid grid-cols-4 gap-2 items-center">
+                                <Input value={btn.label || ''} onChange={(e) => updateBtn('label', e.target.value)} placeholder="Label" />
+                                <select value={btn.action || 'close'} onChange={(e) => updateBtn('action', e.target.value)} className="glass-input px-3 py-2 text-sm rounded-lg">
+                                  <option value="close">Close</option>
+                                  <option value="submit">Submit Form</option>
+                                  <option value="decline">Decline / Lockout</option>
+                                  <option value="url">Open URL</option>
+                                </select>
+                                <select value={btn.style || 'primary'} onChange={(e) => updateBtn('style', e.target.value)} className="glass-input px-3 py-2 text-sm rounded-lg">
+                                  <option value="primary">Primary</option>
+                                  <option value="secondary">Secondary</option>
+                                  <option value="danger">Danger</option>
+                                  <option value="outline">Outline</option>
+                                </select>
+                                <button
+                                  onClick={() => updateModal('buttons', modal.buttons.filter((_, i) => i !== bi))}
+                                  className="text-red-400/60 hover:text-red-400 flex justify-center"
+                                ><Trash2 size={14} /></button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Form Fields */}
+                      <div className="border-t border-violet-100 pt-3">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-xs font-semibold text-slate-700">Collect Info (Form Fields)</span>
+                          <button
+                            type="button"
+                            className="text-xs text-cyan-600 hover:underline"
+                            onClick={() => updateModal('formFields', [...(modal.formFields || []), { ...defaultModalField }])}
+                          >
+                            + Add Field
+                          </button>
+                        </div>
+                        <div className="space-y-2">
+                          {(modal.formFields || []).map((field, fi) => {
+                            const updateField = (k, v) => {
+                              const arr = [...modal.formFields];
+                              arr[fi] = { ...arr[fi], [k]: v };
+                              updateModal('formFields', arr);
+                            };
+                            return (
+                              <div key={fi} className="grid grid-cols-4 gap-2 items-center">
+                                <Input value={field.label || ''} onChange={(e) => updateField('label', e.target.value)} placeholder="Field Label" />
+                                <Input value={field.placeholder || ''} onChange={(e) => updateField('placeholder', e.target.value)} placeholder="Placeholder" />
+                                <select value={field.fieldType || 'text'} onChange={(e) => updateField('fieldType', e.target.value)} className="glass-input px-3 py-2 text-sm rounded-lg">
+                                  <option value="text">Text</option>
+                                  <option value="email">Email</option>
+                                  <option value="phone">Phone</option>
+                                  <option value="checkbox">Checkbox</option>
+                                  <option value="select">Select</option>
+                                  <option value="textarea">Textarea</option>
+                                </select>
+                                <div className="flex items-center gap-2">
+                                  <label className="flex items-center gap-1 text-xs cursor-pointer">
+                                    <input type="checkbox" checked={field.required || false} onChange={(e) => updateField('required', e.target.checked)} className="accent-cyan-400" />
+                                    Req.
+                                  </label>
+                                  <button
+                                    onClick={() => updateModal('formFields', modal.formFields.filter((_, i) => i !== fi))}
+                                    className="text-red-400/60 hover:text-red-400"
+                                  ><Trash2 size={14} /></button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </GlassCard>
+        </div>
       )}
     </div>
   );

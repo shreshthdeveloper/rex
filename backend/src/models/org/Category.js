@@ -10,6 +10,8 @@ const categorySchema = new mongoose.Schema(
     description: { type: String, default: '' },
     sortOrder: { type: Number, default: 0 },
     isActive: { type: Boolean, default: true },
+    hideFromCustomers: { type: Boolean, default: false },
+    hideFromGuests: { type: Boolean, default: false },
   },
   { timestamps: true }
 );

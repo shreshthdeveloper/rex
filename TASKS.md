@@ -437,7 +437,7 @@ Full implementation of the 6-phase production-grade ledger system. All backend p
 
 ---
 
-## 2026-02-26 � Move Dispatch webhook trigger to placedprocessing transition
+## 2026-02-26 � Move Dispatch webhook trigger to placedprocessing transition
 
 `fireDispatch` is now called when an order transitions to `processing` status (not on initial order creation). Also removed test artifacts (hardcoded addresses, `console.table`, `console.log`) from `fireDispatch`.
 
@@ -446,9 +446,206 @@ Full implementation of the 6-phase production-grade ledger system. All backend p
 
 ---
 
-## 2026-02-26 � Google Maps location picker on Warehouse create/edit
+## 2026-02-26 � Google Maps location picker on Warehouse create/edit
 
 Replaced the plain location Input in the Warehouse modal with `AddressAutocomplete`, giving users autocomplete suggestions and a pin-on-map picker. Selected address is stored as a formatted string in the `location` field.
 
 **Files:**
 - `frontend/src/pages/admin/Warehouses.jsx`
+---
+
+## 2026-02-26 22:00 — Ecommerce Storefront Website (Ecom/)
+
+Built a complete customer-facing ecommerce website in `Ecom/` using React 18 + Vite + Tailwind CSS with a dark theme (CSS variables theme system). Connects to the existing backend store APIs on port 5000 via Vite proxy.
+
+**Pages & Features:**
+- **Home**: Hero banner slider (from EcomSettings), marquee, brand carousel, Trending Now & New Arrivals product sections
+- **Products listing**: Sidebar filters (categories, brands), sort, pagination, search, active filter chips
+- **Product detail**: Image gallery, variant selector, quantity picker, add to cart, wishlist, breadcrumbs, trust badges, description, tags
+- **Cart**: Items list with quantity controls, order summary, proceed to checkout
+- **Wishlist**: Product grid with quick add/remove
+- **Checkout**: Address selection/creation, coupon code validation, wallet balance usage, order notes, place order
+- **Login / Register**: Forms with terms acceptance (conditional on EcomSettings)
+- **Account**: Tabbed page with Orders (list + detail modal), Ledger (balance summary + entries table), Addresses (CRUD), Payments (table), Profile (edit + change password)
+- **Layout**: Sticky header with search (debounced API), user dropdown, cart/wishlist badges, theme toggle (dark/light), category nav bar, trust bar footer
+
+**Files:**
+- `Ecom/package.json`, `Ecom/vite.config.js`, `Ecom/tailwind.config.js`, `Ecom/postcss.config.js`, `Ecom/index.html`
+- `Ecom/src/index.css`, `Ecom/src/main.jsx`, `Ecom/src/App.jsx`
+- `Ecom/src/config/constants.js`
+- `Ecom/src/services/api.js`, `Ecom/src/services/catalogService.js`, `Ecom/src/services/customerService.js`
+- `Ecom/src/context/AuthContext.jsx`, `Ecom/src/context/CartContext.jsx`, `Ecom/src/context/WishlistContext.jsx`
+- `Ecom/src/components/layout/Header.jsx`, `Ecom/src/components/layout/CategoryNav.jsx`, `Ecom/src/components/layout/Footer.jsx`
+- `Ecom/src/components/home/HeroBanner.jsx`, `Ecom/src/components/home/BrandCarousel.jsx`, `Ecom/src/components/home/ProductSection.jsx`
+- `Ecom/src/components/product/ProductCard.jsx`
+- `Ecom/src/pages/HomePage.jsx`, `Ecom/src/pages/ProductsPage.jsx`, `Ecom/src/pages/ProductDetailPage.jsx`
+- `Ecom/src/pages/CartPage.jsx`, `Ecom/src/pages/WishlistPage.jsx`, `Ecom/src/pages/CheckoutPage.jsx`
+- `Ecom/src/pages/LoginPage.jsx`, `Ecom/src/pages/RegisterPage.jsx`, `Ecom/src/pages/AccountPage.jsx`
+- `Ecom/src/components/account/OrdersTab.jsx`, `Ecom/src/components/account/LedgerTab.jsx`, `Ecom/src/components/account/AddressesTab.jsx`, `Ecom/src/components/account/PaymentsTab.jsx`, `Ecom/src/components/account/ProfileTab.jsx`
+## 2026-02-26 08:55 � Ecom Bug Fixes + Modal Settings + Age Verification
+### Bug Fixes
+- **Brands not loading**: Fixed catalog.controller.js getBrands to query brands linked to active products via Product.distinct('brand', { isActive: true }) with \ union.
+- **Pagination broken**: Fixed ProductsPage.jsx to use pagination.pages (API field) instead of pagination.totalPages (undefined). Added numbered page buttons with ellipsis.
+- **Cart page broken**: Rewrote CartPage.jsx items and summary sections to use flat CartContext structure (item.id, item.quantity, item.price, item.name, item.sku, item.image).
+- **Checkout page broken**: Fixed CheckoutPage.jsx items map (productId: item.productId || item.id, quantity: item.quantity) and items preview to use flat CartContext structure.
+
+### Modal Settings (Admin)
+- Added modalButtonSchema, modalFormFieldSchema, modalSchema to EcomSettings.js model.
+- Added modals array + geVerificationEnabled/Title/Message/MinAge/LockMessage fields to backend model.
+- Updated ecomSettings.controller.js allowed fields to include modals and age verification fields.
+- Added "Modal Settings" tab to admin EcomSettings.jsx with: age verification toggle + config, custom modal CRUD (title, body, showOn pages, trigger, frequency, buttons sub-CRUD, form fields sub-CRUD).
+
+### Age Verification Gate (Ecom)
+- Created Ecom/src/components/AgeVerificationModal.jsx: fetches settings, shows blurred overlay modal per session, "Yes" ? sessionStorage verified, "No" ? locked + navigate /locked.
+- Created Ecom/src/pages/LockedPage.jsx: full-screen lockout page with no navigation.
+- Updated Ecom/src/App.jsx: integrated AgeVerificationModal, added /locked route (renders without layout).
+
+**Files changed:**
+- ackend/src/controllers/store/catalog.controller.js
+- ackend/src/models/org/EcomSettings.js
+- ackend/src/controllers/admin/ecomSettings.controller.js
+- rontend/src/pages/admin/EcomSettings.jsx
+- Ecom/src/pages/ProductsPage.jsx
+- Ecom/src/pages/CartPage.jsx
+- Ecom/src/pages/CheckoutPage.jsx
+- Ecom/src/App.jsx
+- Ecom/src/components/AgeVerificationModal.jsx (new)
+- Ecom/src/pages/LockedPage.jsx (new)
+
+---
+
+## 2025-07-18 16:00 — Ecom Store UX Overhaul (14 Features/Fixes)
+
+### Bug Fixes
+1. **Age verification toggle fix** — Removed wrapping `<label>` element that swallowed `<button>` click events in admin EcomSettings Modal Settings tab.
+2. **Back button logout fix** — OrdersTab now pushes history state when modal opens and listens for `popstate` to close modal on browser back. LoginPage redirect moved from render-time to `useEffect`.
+
+### UI Improvements
+3. **Logo + store name from settings** — Header and Footer now fetch ecom settings and display the `logo` image + `storeName` dynamically instead of hardcoded constants.
+4. **Age verification modal redesign** — Complete rewrite with gradient header, logo overlay at 10% opacity, 18+ badge, ShieldCheck icon, and smooth fade-in animation.
+5. **Banner hover zoom** — HeroBanner images now zoom 5% on hover with `transition-transform duration-500 ease-out` inside `overflow-hidden` wrapper.
+6. **Variant table product page** — ProductDetailPage now shows variants in a table with columns: thumbnail, name, SKU, price, stock badge, qty (+/- input), cart button per row. Includes "Add All to Cart" button.
+7. **Quick view product modal** — New `QuickViewModal.jsx` component with product image, variant selector, qty picker, add-to-cart, wishlist toggle, and "View full details" link. Uses `createPortal`.
+8. **Product card redesign** — ProductCard now shows brand badge, product name, SKU, category link, stock badge, price, and always-visible cart button. Hover actions (wishlist, quick view) appear on image hover.
+9. **Order view modal redesign** — Compact centered modal with `max-w-lg`, sticky header with order number + status badge, 3-column summary cards, card-based item rows with thumbnails, and compact price breakdown.
+
+### Backend Enhancements
+10. **Category visibility** — Added `hideFromCustomers`/`hideFromGuests` Boolean fields to Category model. Admin can toggle these in create/edit form. Store API filters categories and their products based on auth state using new `optionalCustomerAuth` middleware.
+11. **API enrichment** — `getNewArrivals` now returns stock info, price ranges, and category/brand populates. `search` results enriched with stock data. `getFeatured` parent products now have real stock instead of hardcoded `inStock: true`.
+12. **Product visibility by category** — `getProducts` now filters out products belonging to hidden categories based on customer/guest status.
+13. **Warehouse location API** — New public `GET /warehouses` endpoint. Stock-check API now accepts optional `warehouseId` for location-specific availability.
+
+**Files changed:**
+- frontend/src/pages/admin/EcomSettings.jsx
+- frontend/src/pages/admin/Categories.jsx
+- backend/src/models/org/Category.js
+- backend/src/controllers/admin/categories.controller.js
+- backend/src/controllers/store/catalog.controller.js
+- backend/src/controllers/store/portal.controller.js
+- backend/src/middleware/auth.js
+- backend/src/routes/store/index.js
+- Ecom/src/components/layout/Header.jsx
+- Ecom/src/components/layout/Footer.jsx
+- Ecom/src/components/home/HeroBanner.jsx
+- Ecom/src/components/AgeVerificationModal.jsx
+- Ecom/src/pages/ProductDetailPage.jsx
+- Ecom/src/components/product/ProductCard.jsx
+- Ecom/src/components/product/QuickViewModal.jsx (new)
+- Ecom/src/components/account/OrdersTab.jsx
+- Ecom/src/pages/LoginPage.jsx
+- Ecom/src/services/catalogService.js
+
+---
+
+## 2026-02-26 10:12 — Ecom black screen hotfix (Footer runtime error)
+
+- Fixed runtime crash in footer by removing leftover `STORE_NAME` fallback reference after constants import cleanup.
+- Updated footer heading fallback to `settings?.storeName || 'Store'` to prevent `ReferenceError`.
+- Verified app boot: Vite dev server starts successfully on `http://localhost:5173`.
+
+**Files changed:**
+- Ecom/src/components/layout/Footer.jsx
+
+---
+
+## 2026-02-26 10:22 — Category dropdown layering + guest price lock
+
+- Fixed category/subcategory dropdown stacking so submenu is no longer hidden behind the hero banner (`CategoryNav` z-index increased).
+- Enforced backend price protection for guests by redacting price fields (`basePrice`, `compareAtPrice`, `priceRange`) from catalog/detail/search/featured/new-arrivals API responses when not authenticated.
+- Applied `optionalCustomerAuth` to all storefront product endpoints so logged-in users still receive pricing while guests do not.
+- Updated storefront UI (`ProductCard`, `ProductDetailPage`, `QuickViewModal`) to show **“Login to see prices”** and block add-to-cart actions for guests.
+
+**Files changed:**
+- Ecom/src/components/layout/CategoryNav.jsx
+- Ecom/src/components/product/ProductCard.jsx
+- Ecom/src/pages/ProductDetailPage.jsx
+- Ecom/src/components/product/QuickViewModal.jsx
+- backend/src/routes/store/index.js
+- backend/src/controllers/store/catalog.controller.js
+
+## 2026-02-26 22:xx � Ledger/Orders/Payments: filters, pagination, balance column
+- Added type + date range filters to LedgerTab (with running balanceAfter per row)
+- Added date range filter and improved pagination to OrdersTab
+- Added method + date range filter, page subtotal row to PaymentsTab
+- Backend: myLedger supports type/startDate/endDate; myPayments supports method/startDate/endDate; myOrders supports startDate/endDate
+- Pagination bar now shows Showing X�Y of Z with first/last/prev/next controls
+- Files: Ecom/src/components/account/LedgerTab.jsx, OrdersTab.jsx, PaymentsTab.jsx, backend/src/controllers/store/portal.controller.js
+
+## 2026-02-26 11:57 � Bug fixes: search visibility, category nav, wishlists, admin subcategories, portal search
+
+- **Issue 1 (search hidden cats):** catalog.controller.js search() now queries hiddenCats (same as getProducts) and excludes products from hidden categories for guests/customers.
+- **Issue 2 (getProductBySlug/ById guard):** After fetching a product, both endpoints check if any of the product's categories are hidden for the current visitor and return 404 if so.
+- **Issue 3 (CategoryNav re-fetch):** CategoryNav now imports useAuth, adds isAuthenticated as a useEffect dependency, and resets openId � categories re-fetch (with correct visibility) on every login/logout.
+- **Issue 4 (dropdown clipped by overflow-x-auto):** Moved the subcategory dropdown to render at <nav> level instead of inside the overflow-x-auto scroll container. Position is computed via getBoundingClientRect so it aligns with the hovered button.
+- **Issue 5 (admin subcategories not showing):** dmin/categories.controller.list changed from returning a tree (roots only) to a flat list with parentCategory populated (
+ame) � all subcategories now appear in the DataTable.
+- **Issue 6 (WishlistContext price fields):** 	oggle now stores asePrice, compareAtPrice, priceRange, 	ype, images, rand, categories, sku, inStock so ProductCard can correctly show prices when logged in and hide them when logged out.
+- **Issue 7 (portal tab search):** Added q query param to myOrders (filters by orderNumber), myLedger (filters by 
+eferenceNumber), and myPayments (filters by 
+eferenceNumber or exact mount). Frontend tabs have a new text search input that passes q to the API.
+
+**Files changed:**
+- backend/src/controllers/store/catalog.controller.js
+- backend/src/controllers/admin/categories.controller.js
+- backend/src/controllers/store/portal.controller.js
+- Ecom/src/components/layout/CategoryNav.jsx
+- Ecom/src/context/WishlistContext.jsx
+- Ecom/src/components/account/LedgerTab.jsx
+- Ecom/src/components/account/OrdersTab.jsx
+- Ecom/src/components/account/PaymentsTab.jsx
+
+## 2026-02-26 — Fix: hidden-category bypass + full cleanup run
+
+**Bug fixes (backend was running stale code — restarted with updated build):**
+- `getFeatured` and `getNewArrivals` now filter hidden categories — products from hidden categories no longer appear in homepage featured/new-arrivals sections.
+- `getProducts` category+hiddenCats filter collision fixed: previously `filter.categories = category` overwrote the `$nin: hiddenCats` guard. Replaced with a `catConditions` array merged via `$and` so both the requested category and the hidden-category exclusion are enforced simultaneously. This also closed a security bypass where passing a hidden category ID as a query param could reveal hidden products.
+
+**Dead code removed:**
+- `getFeatured`: removed dead `const productIds = products.map(p => p._id)` (computed but never used anywhere).
+- `WishlistPage.jsx`: removed unused `toggle` destructured variable; removed unused `ShoppingBag` lucide import.
+- `getProducts`: removed stale conditional `filter.categories ? { $in: [...], $nin: ... }` expression (was unreachable — filter.categories was never set before that block).
+
+**Files changed:**
+- backend/src/controllers/store/catalog.controller.js
+- Ecom/src/pages/WishlistPage.jsx
+
+## 2026-02-26 12:20 — Cart price leak fix after logout
+- Fixed a major auth leak where cart prices remained visible after logout.
+- CartContext now reads auth state and sanitizes persisted cart items on logout by nulling price fields.
+- CartPage now gates all unit price, line total, summary item total, and subtotal rendering behind isAuthenticated, showing Login to see prices for guests.
+- Checkout CTA now routes guests to login (/login) instead of showing a checkout action.
+
+Files changed:
+- Ecom/src/context/CartContext.jsx
+- Ecom/src/pages/CartPage.jsx
+
+## 2026-02-26 12:35 � Hard reload home-state stabilization
+- Fixed homepage hard-reload behavior where the app could show a blank/fallback "Welcome to the Store" state before real data returned.
+- HomePage now uses Promise.allSettled (instead of Promise.all) so one transient API failure does not collapse all home sections.
+- Added cancellation guard in HomePage effect to prevent stale state writes during rapid navigation/reload.
+- HeroBanner now accepts loading and renders a loading skeleton while home API calls are in flight; fallback banner only appears after loading completes and no banners exist.
+- Added banner index reset when banner data changes to avoid stale index on refresh.
+
+Files changed:
+- Ecom/src/pages/HomePage.jsx
+- Ecom/src/components/home/HeroBanner.jsx

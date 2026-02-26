@@ -1,53 +1,52 @@
-import { createContext, useContext, useState, useEffect } from 'react';
-import * as api from '../api';
+import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { customerService } from '../services/customerService';
 
 const AuthContext = createContext(null);
+export const useAuth = () => useContext(AuthContext);
 
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(null);
+  const [customer, setCustomer] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('ecom_customer')); } catch { return null; }
+  });
   const [token, setToken] = useState(() => localStorage.getItem('ecom_token'));
-  const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    if (token) {
-      api.getProfile()
-        .then((res) => setUser(res.data))
-        .catch(() => { localStorage.removeItem('ecom_token'); setToken(null); })
-        .finally(() => setLoading(false));
-    } else {
-      setLoading(false);
-    }
-  }, [token]);
+  const isAuthenticated = !!token && !!customer;
 
-  const loginUser = async (email, password) => {
-    const res = await api.login({ email, password });
-    const { token: t, customer } = res.data;
-    localStorage.setItem('ecom_token', t);
-    setToken(t);
-    setUser(customer);
-    return customer;
-  };
+  const login = useCallback(async ({ email, password }) => {
+    const data = await customerService.login({ email, password });
+    localStorage.setItem('ecom_token', data.token);
+    localStorage.setItem('ecom_customer', JSON.stringify(data.customer));
+    setToken(data.token);
+    setCustomer(data.customer);
+    return data;
+  }, []);
 
-  const registerUser = async (data) => {
-    const res = await api.register(data);
-    const { token: t, customer } = res.data;
-    localStorage.setItem('ecom_token', t);
-    setToken(t);
-    setUser(customer);
-    return customer;
-  };
+  const register = useCallback(async (payload) => {
+    const data = await customerService.register(payload);
+    localStorage.setItem('ecom_token', data.token);
+    localStorage.setItem('ecom_customer', JSON.stringify(data.customer));
+    setToken(data.token);
+    setCustomer(data.customer);
+    return data;
+  }, []);
 
-  const logout = () => {
+  const logout = useCallback(() => {
     localStorage.removeItem('ecom_token');
+    localStorage.removeItem('ecom_customer');
     setToken(null);
-    setUser(null);
-  };
+    setCustomer(null);
+  }, []);
+
+  // Listen for forced logout from API interceptor
+  useEffect(() => {
+    const handler = () => logout();
+    window.addEventListener('auth:logout', handler);
+    return () => window.removeEventListener('auth:logout', handler);
+  }, [logout]);
 
   return (
-    <AuthContext.Provider value={{ user, token, loading, loginUser, registerUser, logout }}>
+    <AuthContext.Provider value={{ customer, token, isAuthenticated, login, register, logout }}>
       {children}
     </AuthContext.Provider>
   );
 }
-
-export const useAuth = () => useContext(AuthContext);

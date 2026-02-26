@@ -138,4 +138,20 @@ const superAdminAuth = async (req, res, next) => {
   }
 };
 
-module.exports = { adminAuth, customerAuth, resolveOrg, superAdminAuth };
+/**
+ * Optional customer auth — sets req.customer if token present, otherwise continues silently
+ */
+const optionalCustomerAuth = async (req, res, next) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) return next();
+    const token = authHeader.split(' ')[1];
+    const decoded = jwt.verify(token, config.jwtSecret);
+    if (decoded.role !== 'customer') return next();
+    const customer = await req.models.Customer.findById(decoded.customerId);
+    if (customer && customer.isActive) req.customer = customer;
+  } catch { /* silently ignore */ }
+  next();
+};
+
+module.exports = { adminAuth, customerAuth, optionalCustomerAuth, resolveOrg, superAdminAuth };
