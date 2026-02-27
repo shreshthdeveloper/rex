@@ -33,6 +33,7 @@ const LEDGER_COLORS = {
 };
 
 const DETAIL_TABS = [
+  { id: 'profile', label: 'Profile' },
   { id: 'ledger', label: 'Ledger' },
   { id: 'balance', label: 'Balance' },
   { id: 'topup', label: 'Topup' },
@@ -208,11 +209,10 @@ export default function Customers() {
 
   const openDetail = async (c) => {
     setDetailCustomer(c);
-    setDetailTab('ledger');
+    setDetailTab('profile');
     setTopupForm(emptyTopup);
     setAdjustForm(emptyAdjust);
     setLiveBalance(null);
-    fetchDetailTab('ledger', c._id);
     refreshLiveBalance(c._id);
   };
   const closeDetail = () => { setDetailCustomer(null); setDetailData([]); setBalanceData(null); setLiveBalance(null); };
@@ -243,7 +243,7 @@ export default function Customers() {
 
   const onDetailTabChange = (tab) => {
     setDetailTab(tab);
-    if (!['topup', 'adjust'].includes(tab)) fetchDetailTab(tab);
+    if (!['topup', 'adjust', 'profile'].includes(tab)) fetchDetailTab(tab);
   };
 
   /* ───── TOPUP ───── */
@@ -400,6 +400,104 @@ export default function Customers() {
   /* ───── DETAIL TAB CONTENT ───── */
   const renderDetailContent = () => {
     switch (detailTab) {
+      case 'profile':
+        return (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+            {/* Contact */}
+            <GlassCard>
+              <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">Contact</h4>
+              <dl className="space-y-2 text-sm">
+                <div className="flex justify-between">
+                  <dt className="text-slate-500">Name</dt>
+                  <dd className="text-slate-800 font-medium">{detailCustomer.name || '—'}</dd>
+                </div>
+                <div className="flex justify-between">
+                  <dt className="text-slate-500">Company</dt>
+                  <dd className="text-slate-800">{detailCustomer.companyName || '—'}</dd>
+                </div>
+                <div className="flex justify-between">
+                  <dt className="text-slate-500">Email</dt>
+                  <dd className="text-slate-800 break-all">{detailCustomer.email || '—'}</dd>
+                </div>
+                <div className="flex justify-between">
+                  <dt className="text-slate-500">Phone</dt>
+                  <dd className="text-slate-800">{detailCustomer.phone || '—'}</dd>
+                </div>
+                <div className="flex justify-between">
+                  <dt className="text-slate-500">Website</dt>
+                  <dd className="text-slate-800">{detailCustomer.website || '—'}</dd>
+                </div>
+                <div className="flex justify-between">
+                  <dt className="text-slate-500">GST Number</dt>
+                  <dd className="text-slate-800 font-mono text-xs">{detailCustomer.gstNumber || '—'}</dd>
+                </div>
+                <div className="flex justify-between">
+                  <dt className="text-slate-500">Payment Terms</dt>
+                  <dd className="text-slate-800">{detailCustomer.paymentTerms || '—'}</dd>
+                </div>
+              </dl>
+            </GlassCard>
+
+            {/* Account */}
+            <GlassCard>
+              <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">Account</h4>
+              <dl className="space-y-2 text-sm">
+                <div className="flex justify-between">
+                  <dt className="text-slate-500">Tier</dt>
+                  <dd><Badge color={TIER_COLORS[detailCustomer.tier] || 'gray'}>{detailCustomer.tier}</Badge></dd>
+                </div>
+                <div className="flex justify-between">
+                  <dt className="text-slate-500">Status</dt>
+                  <dd><Badge color={detailCustomer.isActive !== false ? 'green' : 'red'}>{detailCustomer.isActive !== false ? 'Active' : 'Inactive'}</Badge></dd>
+                </div>
+                <div className="flex justify-between">
+                  <dt className="text-slate-500">Credit Limit</dt>
+                  <dd className="text-slate-800 font-medium">₹{fmtCurrency(detailCustomer.creditLimit)}</dd>
+                </div>
+                <div className="flex justify-between">
+                  <dt className="text-slate-500">Current Balance</dt>
+                  <dd className={`font-semibold ${
+                    Number(liveBalance ?? detailCustomer.currentBalance) > 0 ? 'text-red-400'
+                    : Number(liveBalance ?? detailCustomer.currentBalance) < 0 ? 'text-emerald-400'
+                    : 'text-slate-800'
+                  }`}>₹{fmtCurrency(liveBalance ?? detailCustomer.currentBalance)}</dd>
+                </div>
+                <div className="flex justify-between">
+                  <dt className="text-slate-500">Member Since</dt>
+                  <dd className="text-slate-800">{fmtDate(detailCustomer.createdAt)}</dd>
+                </div>
+              </dl>
+            </GlassCard>
+
+            {/* Address */}
+            {detailCustomer.addresses?.length > 0 && (
+              <GlassCard className="sm:col-span-2">
+                <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">Addresses</h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {detailCustomer.addresses.map((addr, i) => (
+                    <div key={i} className="text-sm bg-violet-50 rounded-lg p-3 space-y-0.5">
+                      <p className="text-xs font-semibold text-violet-600 uppercase">{addr.label || `Address ${i + 1}`}</p>
+                      {addr.line1 && <p className="text-slate-800">{addr.line1}</p>}
+                      {(addr.city || addr.state || addr.zip) && (
+                        <p className="text-slate-600">{[addr.city, addr.state, addr.zip].filter(Boolean).join(', ')}</p>
+                      )}
+                      {addr.country && <p className="text-slate-500">{addr.country}</p>}
+                    </div>
+                  ))}
+                </div>
+              </GlassCard>
+            )}
+
+            {/* Notes */}
+            {detailCustomer.notes && (
+              <GlassCard className="sm:col-span-2">
+                <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Notes</h4>
+                <p className="text-sm text-slate-700 whitespace-pre-wrap">{detailCustomer.notes}</p>
+              </GlassCard>
+            )}
+          </div>
+        );
+
       case 'ledger':
         return <DataTable columns={ledgerColumns} data={detailData} loading={detailLoading} emptyMessage="No ledger entries" />;
 

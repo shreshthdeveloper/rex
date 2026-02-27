@@ -969,3 +969,18 @@ egisterOrgModels in index.js)
 **Files:**
 - Ecom/src/pages/HomePage.jsx
 - Ecom/src/components/home/WallBanners.jsx
+
+---
+
+## 2026-02-27 — Customer CSV bulk import (puff-stuff org)
+
+- Wrote `backend/scripts/importCustomers.js` — one-shot import script that reads `Customer Export - 2026-02-16.csv` (199 data rows) and inserts into `org_puff-stuff` MongoDB.
+- Column mapping: `Business Name *` → `companyName`, `Business Phone No` → `phone`, `Class of Trade` (Retailer → `retail`, Distributor → `wholesale`) → `tier`, Shipping details → `addresses[0]`.
+- Name falls back to Business Name then Shipping Name when the Name column is empty.
+- Rows missing an email received auto-generated placeholder: `noemail-{csvId}@import.placeholder` (133 rows); 67 rows had real emails.
+- Proper CSV parser written inline to handle quoted fields containing commas.
+- Resolved org database name (`org_puff-stuff`) by querying the superadmin DB for slug `puff-stuff`.
+- Final result: 199 customers inserted, 200 total in DB (1 pre-existing).
+
+**Files:**
+- backend/scripts/importCustomers.js
