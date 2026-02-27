@@ -83,6 +83,8 @@ export default function Products() {
   const [warehouseList, setWarehouseList] = useState([]);
   const [openingStockRows, setOpeningStockRows] = useState([]);
   const [parentOpeningWhId, setParentOpeningWhId] = useState('');
+  // Per-warehouse per-variant qty map: { [warehouseId]: { [sku]: qty } }
+  const [variantOpeningStock, setVariantOpeningStock] = useState({});
 
   // Variant image panel expand/collapse
   const [expandedVariantImageIdx, setExpandedVariantImageIdx] = useState(null);
@@ -178,6 +180,7 @@ export default function Products() {
     setProductUrlInput('');
     setOpeningStockRows(warehouseList.map(w => ({ warehouseId: w._id, warehouseName: w.name, warehouseCode: w.code, quantity: '' })));
     setParentOpeningWhId(warehouseList[0]?._id || '');
+    setVariantOpeningStock({});
     setModalOpen(true);
   };
   const openEdit = async (p) => {
@@ -217,7 +220,7 @@ export default function Products() {
     setProductUrlInput('');
     setModalOpen(true);
   };
-  const closeModal = () => { setModalOpen(false); setEditing(null); setForm(emptyForm); setFormVariants([]); setRemovedVariantIds([]); setFormImages([]); setRemovedImageIds([]); setOpeningStockRows([]); setParentOpeningWhId(''); setImageInputMode('upload'); setProductUrlInput(''); };
+  const closeModal = () => { setModalOpen(false); setEditing(null); setForm(emptyForm); setFormVariants([]); setRemovedVariantIds([]); setFormImages([]); setRemovedImageIds([]); setOpeningStockRows([]); setParentOpeningWhId(''); setVariantOpeningStock({}); setImageInputMode('upload'); setProductUrlInput(''); };
 
   /* ───── INLINE VARIANT HELPERS ───── */
   const addFormVariant = () => setFormVariants(prev => [
@@ -360,14 +363,14 @@ export default function Products() {
       }
 
       // Handle variants for parent products
-      // createdVariantStock: collect { variantId, openingQty, openingSupplierPrice } from each successful addVariant
-      const createdVariantStock = [];
+      // skuToVariantId maps newly created variant SKUs → their DB _id for opening stock
+      const skuToVariantId = {};
       if (form.type === 'parent' && parentId) {
         // Delete removed existing variants
         for (const vid of removedVariantIds) {
           try { await productsAPI.deleteVariant(parentId, vid); } catch { /* skip */ }
         }
-        // Create new variants — capture each returned _id for opening stock
+        // Create new variants — capture each returned _id keyed by sku
         const newVars = formVariants.filter(v => !v._existing);
         let created = 0;
         for (const v of newVars) {
@@ -381,14 +384,8 @@ export default function Products() {
               slug: generateSlug(v.name),
             });
             created++;
-            // Capture for opening stock if user entered a quantity
             const variantId = varRes.data?._id;
-            if (variantId && v.openingQty !== '' && Number(v.openingQty) > 0) {
-              createdVariantStock.push({
-                productId: variantId,
-                quantity: Number(v.openingQty),
-              });
-            }
+            if (variantId && v.sku) skuToVariantId[v.sku] = variantId;
             // Save variant images (multiple supported)
             const pendingVarImages = (v.images || []).filter(img => !img._existingId);
             if (variantId && pendingVarImages.length > 0) {
@@ -447,19 +444,23 @@ export default function Products() {
         if (stockSaved > 0) toast.success(`Opening stock saved for ${stockSaved} warehouse${stockSaved !== 1 ? 's' : ''}`);
       }
 
-      // Save opening stock for new parent product variants — one bulk call for all of them
-      if (!editing && form.type === 'parent' && parentId && parentOpeningWhId && createdVariantStock.length > 0) {
-        try {
-          const bulkRes = await stockAPI.bulkOpeningByWarehouse({
-            warehouseId: parentOpeningWhId,
-            items: createdVariantStock,
-          });
-          const saved = bulkRes.data?.success?.length ?? createdVariantStock.length;
-          const skipped = bulkRes.data?.skipped?.length ?? 0;
-          toast.success(`Opening stock saved for ${saved} variant${saved !== 1 ? 's' : ''}${skipped ? `, ${skipped} skipped` : ''}`);
-        } catch (err) {
-          toast.error(`Opening stock: ${err.message || 'Failed to save'}`);
+      // Save opening stock for new parent product variants — one bulk call per warehouse
+      if (!editing && form.type === 'parent' && parentId && Object.keys(skuToVariantId).length > 0) {
+        let variantStockSaved = 0;
+        for (const [whId, skuQtyMap] of Object.entries(variantOpeningStock)) {
+          const items = Object.entries(skuQtyMap)
+            .filter(([, qty]) => qty !== '' && Number(qty) > 0)
+            .map(([sku, qty]) => ({ productId: skuToVariantId[sku], quantity: Number(qty) }))
+            .filter(i => i.productId);
+          if (!items.length) continue;
+          try {
+            await stockAPI.bulkOpeningByWarehouse({ warehouseId: whId, items });
+            variantStockSaved++;
+          } catch (err) {
+            toast.error(`Opening stock: ${err.message || 'Failed to save'}`);
+          }
         }
+        if (variantStockSaved > 0) toast.success(`Variant opening stock saved for ${variantStockSaved} warehouse${variantStockSaved !== 1 ? 's' : ''}`);
       }
 
       closeModal();
@@ -1072,7 +1073,7 @@ export default function Products() {
                 </div>
               </div>
               <p className="text-[11px] text-slate-400 mb-3">
-                Set opening stock quantities for each variant in the selected warehouse. Leave quantity empty to skip. Click <CheckCheck size={11} className="inline mx-0.5 text-violet-500" /> to apply a value to all rows.
+                Select a warehouse, enter quantities, then switch to another warehouse to add stock there — your values are saved per warehouse. Click <CheckCheck size={11} className="inline mx-0.5 text-violet-500" /> to apply a value to all rows.
               </p>
 
               {!parentOpeningWhId ? (
@@ -1088,8 +1089,7 @@ export default function Products() {
                     </thead>
                     <tbody>
                       {formVariants.filter(v => !v._existing).map((v, idx) => {
-                        // true index in the full formVariants array (needed for updateFormVariant)
-                        const trueIdx = formVariants.indexOf(v);
+                        const curQty = variantOpeningStock[parentOpeningWhId]?.[v.sku] ?? '';
                         return (
                           <tr key={idx} className="border-b border-slate-100 last:border-0 hover:bg-violet-50/20 transition-colors">
                             <td className="py-2 px-3">
@@ -1101,15 +1101,27 @@ export default function Products() {
                               <div className="flex items-center gap-1">
                                 <input
                                   type="number" min="0" step="1"
-                                  value={v.openingQty}
-                                  onChange={(e) => updateFormVariant(trueIdx, 'openingQty', e.target.value)}
+                                  value={curQty}
+                                  onChange={(e) => setVariantOpeningStock(prev => ({
+                                    ...prev,
+                                    [parentOpeningWhId]: { ...(prev[parentOpeningWhId] || {}), [v.sku]: e.target.value },
+                                  }))}
                                   placeholder="—"
                                   className="w-full text-center bg-transparent border border-slate-200 rounded px-2 py-1 text-slate-800 focus:outline-none focus:border-violet-400 focus:ring-1 focus:ring-violet-400/30 placeholder-slate-300"
                                 />
                                 <button
                                   type="button"
-                                  title="Apply this quantity to all rows"
-                                  onClick={() => copyOpeningToAll('openingQty', v.openingQty)}
+                                  title="Apply this quantity to all rows for this warehouse"
+                                  onClick={() => {
+                                    const allSkus = formVariants.filter(fv => !fv._existing).reduce((acc, fv) => {
+                                      acc[fv.sku] = curQty;
+                                      return acc;
+                                    }, {});
+                                    setVariantOpeningStock(prev => ({
+                                      ...prev,
+                                      [parentOpeningWhId]: { ...(prev[parentOpeningWhId] || {}), ...allSkus },
+                                    }));
+                                  }}
                                   className="flex-shrink-0 text-violet-400 hover:text-violet-600 transition-colors p-0.5 rounded hover:bg-violet-50"
                                 >
                                   <CheckCheck size={13} />
@@ -1121,6 +1133,21 @@ export default function Products() {
                       })}
                     </tbody>
                   </table>
+                </div>
+              )}
+              {/* Summary of filled warehouses */}
+              {Object.entries(variantOpeningStock).some(([, m]) => Object.values(m).some(q => q !== '' && Number(q) > 0)) && (
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {Object.entries(variantOpeningStock).map(([whId, skuMap]) => {
+                    const filled = Object.values(skuMap).filter(q => q !== '' && Number(q) > 0).length;
+                    if (!filled) return null;
+                    const wh = warehouseList.find(w => w._id === whId);
+                    return (
+                      <span key={whId} className={`text-[10px] px-2 py-0.5 rounded-full border font-medium ${whId === parentOpeningWhId ? 'bg-violet-100 text-violet-700 border-violet-300' : 'bg-emerald-50 text-emerald-700 border-emerald-200'}`}>
+                        {wh?.name || whId}: {filled} variant{filled !== 1 ? 's' : ''}
+                      </span>
+                    );
+                  })}
                 </div>
               )}
             </div>
