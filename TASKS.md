@@ -984,3 +984,18 @@ egisterOrgModels in index.js)
 
 **Files:**
 - backend/scripts/importCustomers.js
+
+---
+
+## 2026-02-27 — Product CSV bulk import (puff-stuff org)
+
+- Wrote `backend/scripts/importProducts.js` — one-shot import script from `product-export-core-2026-02-17.csv` (986 data rows).
+- Split logic: first occurrence of `-` (allowing `--`, `- -`, optional surrounding spaces) divides parent product name from variant value.
+- Grouped 986 rows into 103 parent product groups + 22 standalone single products.
+- Column mapping: Net Cost Price → `costPrice`, Sale Price → `basePrice`, UPC1 → `barcodeValue`, Curr. Available Quantity → stock in Main Warehouse.
+- Auto-created 51 brands and 5 categories (with URL-safe slugs) as needed.
+- `variantAttribute` set to "Flavor" for all variant products.
+- Final result: 103 parent products + 949 variants + 22 singles = **1,074 total products**, 171 stock records, 0 errors.
+
+**Files:**
+- backend/scripts/importProducts.js
