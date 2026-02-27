@@ -4,6 +4,12 @@ All completed tasks are recorded here. After finishing any task or feature, appe
 
 ---
 
+## 2026-02-27 — Wall banners saving fix
+Fixed wall banners not saving from ERP for puff-stuff org. Issue was backend server was crashed, preventing API updates. Added default [] to wallBanners schema and ensured it's always included in get response. Wall banners now persist correctly.
+**Files:** `backend/src/models/org/EcomSettings.js`, `backend/src/controllers/admin/ecomSettings.controller.js`
+
+---
+
 ## 2025-07-14 — Modal portal fix
 White space issue in modals fixed by using `createPortal` to render modals into `document.body` and applying `z-[200]`.
 **Files:** `frontend/src/components/ui/index.jsx`
@@ -890,3 +896,53 @@ egisterOrgModels in index.js)
 
 **Files:**
 - backend/src/config/database.js
+
+---
+
+## 2026-02-27 19:25 — Brand Policies not reflecting in Ecom (ERP → Store sync fix)
+
+- Root cause: `PUT /admin/ecom-settings` ignored brand policy fields because they were missing from the backend update allowlist.
+- Added policy fields to allowed keys in admin settings controller: `termsContent`, `returnRefundContent`, `privacyContent`, `contactContent`, `aboutUsContent`.
+- Verified end-to-end via API: update from admin settings now persists and `GET /store/:orgSlug/settings` returns updated values used by Ecom policy pages.
+
+**Files:**
+- backend/src/controllers/admin/ecomSettings.controller.js
+
+---
+
+## 2026-02-27 19:40 — Brand Policies rich formatting support (ERP input → Ecom render)
+
+- Added smart policy formatter so ERP content can be written as either HTML or plain text and still render cleanly on Ecom pages.
+- Plain text now supports readable formatting: paragraph spacing, line breaks, bullet lists (`- item`), numbered lists (`1. item`), and markdown-style headings (`#`, `##`, `###`).
+- Updated ERP Brand Policies preview to use the same formatter logic as storefront output, so preview matches what users see on Ecom.
+
+**Files:**
+- Ecom/src/components/common/PolicyPageLayout.jsx
+- frontend/src/pages/admin/EcomSettings.jsx
+
+---
+
+## 2026-02-27 20:05 — Wall Banners support (ERP + Ecom homepage)
+
+- Added a new `wallBanners` settings field in Ecom settings schema and enabled persistence in admin settings update API.
+- Extended ERP `Ecom Settings → Banners` tab with a dedicated **Wall Banners** section (add/edit/remove, active toggle, title, subtitle, image, link).
+- Added storefront `WallBanners` component and rendered wall banners on homepage immediately after the hero carousel, ordered by `sortOrder`.
+
+**Files:**
+- backend/src/models/org/EcomSettings.js
+- backend/src/controllers/admin/ecomSettings.controller.js
+- frontend/src/pages/admin/EcomSettings.jsx
+- Ecom/src/components/home/WallBanners.jsx
+- Ecom/src/pages/HomePage.jsx
+
+---
+
+## 2026-02-27 20:20 — Wall banners visibility + spacing + zoom alignment
+
+- Fixed homepage wall banner visibility logic to treat missing `isActive` as enabled (`isActive !== false`) so legacy banner rows still render.
+- Removed top spacing before wall banners so they stick directly under the hero carousel (`pt-0` on wall banner section).
+- Matched wall banner image hover behavior with carousel style (smooth zoom with `duration-500 ease-out` and `scale-105`).
+
+**Files:**
+- Ecom/src/pages/HomePage.jsx
+- Ecom/src/components/home/WallBanners.jsx

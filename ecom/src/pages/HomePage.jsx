@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { catalogService } from '../services/catalogService';
 import HeroBanner from '../components/home/HeroBanner';
+import WallBanners from '../components/home/WallBanners';
 import BrandCarousel from '../components/home/BrandCarousel';
 import ProductSection from '../components/home/ProductSection';
 
@@ -42,10 +43,14 @@ export default function HomePage() {
   }, []);
 
   const banners = settings?.banners?.filter((b) => b.isActive) || [];
+  const wallBanners = (settings?.wallBanners || [])
+    .filter((b) => b && b.isActive !== false)
+    .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
 
   return (
     <div>
       <HeroBanner banners={banners} loading={loading} />
+      <WallBanners banners={wallBanners} />
 
       {/* Banner strip / marquee */}
       {settings?.marqueeEnabled && settings?.marqueeText && (

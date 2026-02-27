@@ -66,6 +66,7 @@ const ecomSettingsSchema = new mongoose.Schema({
 
   /* Hero / Banners */
   banners: [bannerSchema],
+  wallBanners: { type: [bannerSchema], default: [] },
 
   /* Marquee / Alerts */
   marqueeText: { type: String, default: '' },

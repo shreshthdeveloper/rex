@@ -43,6 +43,60 @@ const defaultModalField = { label: '', placeholder: '', fieldType: 'text', optio
 const defaultBanner = { title: '', subtitle: '', image: '', link: '', isActive: true, sortOrder: 0 };
 const defaultDoc = { name: '', description: '', required: false };
 
+const escapePolicyHtml = (value = '') => String(value)
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;')
+  .replace(/'/g, '&#39;');
+
+const hasPolicyHtmlTags = (value = '') => /<\/?[a-z][\s\S]*>/i.test(value);
+
+const formatPolicyPreviewHtml = (raw = '') => {
+  const content = String(raw || '').replace(/\r\n/g, '\n').trim();
+  if (!content) return '';
+  if (hasPolicyHtmlTags(content)) return content;
+
+  const blocks = content.split(/\n{2,}/).map((b) => b.trim()).filter(Boolean);
+  const htmlBlocks = [];
+
+  for (const block of blocks) {
+    const lines = block.split('\n').map((l) => l.trim()).filter(Boolean);
+    if (!lines.length) continue;
+
+    if (lines.every((line) => /^[-*]\s+/.test(line))) {
+      htmlBlocks.push(`<ul>${lines
+        .map((line) => line.replace(/^[-*]\s+/, '').trim())
+        .filter(Boolean)
+        .map((item) => `<li>${escapePolicyHtml(item)}</li>`)
+        .join('')}</ul>`);
+      continue;
+    }
+
+    if (lines.every((line) => /^\d+\.\s+/.test(line))) {
+      htmlBlocks.push(`<ol>${lines
+        .map((line) => line.replace(/^\d+\.\s+/, '').trim())
+        .filter(Boolean)
+        .map((item) => `<li>${escapePolicyHtml(item)}</li>`)
+        .join('')}</ol>`);
+      continue;
+    }
+
+    if (lines.length === 1 && /^#{1,3}\s+/.test(lines[0])) {
+      const line = lines[0];
+      const level = line.match(/^#+/)[0].length;
+      const text = line.replace(/^#{1,3}\s+/, '').trim();
+      const tag = level === 1 ? 'h1' : level === 2 ? 'h2' : 'h3';
+      htmlBlocks.push(`<${tag}>${escapePolicyHtml(text)}</${tag}>`);
+      continue;
+    }
+
+    htmlBlocks.push(`<p>${lines.map(escapePolicyHtml).join('<br/>')}</p>`);
+  }
+
+  return htmlBlocks.join('');
+};
+
 /* ─── Reusable Image Upload Component ─── */
 function ImageUpload({ label, value, onChange, className = '' }) {
   const toast = useToast();
@@ -210,6 +264,12 @@ export default function EcomSettings() {
   const removeBanner = (i) => setBanners((b) => b.filter((_, idx) => idx !== i));
   const updateBanner = (i, key, val) => setBanners((b) => b.map((bn, idx) => idx === i ? { ...bn, [key]: val } : bn));
 
+  const wallBanners = data.wallBanners || [];
+  const setWallBanners = (fn) => set('wallBanners', typeof fn === 'function' ? fn(wallBanners) : fn);
+  const addWallBanner = () => setWallBanners((b) => [...b, { ...defaultBanner, sortOrder: b.length }]);
+  const removeWallBanner = (i) => setWallBanners((b) => b.filter((_, idx) => idx !== i));
+  const updateWallBanner = (i, key, val) => setWallBanners((b) => b.map((bn, idx) => idx === i ? { ...bn, [key]: val } : bn));
+
   /* ─── Section helpers ─── */
   const sections = data.sections || [];
   const setSections = (fn) => set('sections', typeof fn === 'function' ? fn(sections) : fn);
@@ -295,6 +355,13 @@ export default function EcomSettings() {
       {/* ══════════ BANNERS ══════════ */}
       {tab === 'banners' && (
         <div className="space-y-4">
+          <GlassCard>
+            <div className="mb-4">
+              <h3 className="text-sm font-semibold text-slate-800">Carousel Banners</h3>
+              <p className="text-xs text-slate-400 mt-0.5">Main homepage slider banners.</p>
+            </div>
+          </GlassCard>
+
           {banners.map((b, i) => (
             <GlassCard key={i}>
               <div className="flex items-center justify-between mb-4">
@@ -328,6 +395,47 @@ export default function EcomSettings() {
             </GlassCard>
           ))}
           <Button variant="ghost" onClick={addBanner}><Plus size={14} /> Add Banner</Button>
+
+          <GlassCard>
+            <div className="mb-4">
+              <h3 className="text-sm font-semibold text-slate-800">Wall Banners</h3>
+              <p className="text-xs text-slate-400 mt-0.5">Shown on homepage right after the carousel as a vertical line of banners.</p>
+            </div>
+          </GlassCard>
+
+          {wallBanners.map((b, i) => (
+            <GlassCard key={`wall-${i}`}>
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <GripVertical size={14} className="text-gray-600" />
+                  <span className="text-sm font-medium text-slate-800">Wall Banner {i + 1}</span>
+                  <button
+                    onClick={() => updateWallBanner(i, 'isActive', !b.isActive)}
+                    className={`ml-2 text-[10px] px-2 py-0.5 rounded-full border ${
+                      b.isActive ? 'text-green-400 border-green-500/20 bg-green-500/10' : 'text-gray-500 border-violet-100'
+                    }`}
+                  >
+                    {b.isActive ? 'Active' : 'Inactive'}
+                  </button>
+                </div>
+                <button onClick={() => removeWallBanner(i)} className="text-red-400/60 hover:text-red-400">
+                  <Trash2 size={14} />
+                </button>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <Input label="Title" value={b.title} onChange={(e) => updateWallBanner(i, 'title', e.target.value)} />
+                <Input label="Subtitle" value={b.subtitle} onChange={(e) => updateWallBanner(i, 'subtitle', e.target.value)} />
+                <ImageUpload label="Wall Banner Image" value={b.image} onChange={(v) => updateWallBanner(i, 'image', v)} />
+                <Input label="Link" value={b.link} onChange={(e) => updateWallBanner(i, 'link', e.target.value)} placeholder="/store/slug/products/..." />
+              </div>
+              {b.image && (
+                <div className="mt-3">
+                  <img src={b.image} alt="Preview" className="h-20 rounded-lg object-cover" onError={(e) => e.target.style.display = 'none'} />
+                </div>
+              )}
+            </GlassCard>
+          ))}
+          <Button variant="ghost" onClick={addWallBanner}><Plus size={14} /> Add Wall Banner</Button>
         </div>
       )}
 
@@ -532,7 +640,7 @@ export default function EcomSettings() {
                   <h3 className="text-sm font-semibold text-slate-800 flex items-center gap-2">
                     <FileText size={14} className="text-violet-600" /> {label}
                   </h3>
-                  <p className="text-xs text-slate-400 mt-0.5">{hint}. Supports HTML.</p>
+                  <p className="text-xs text-slate-400 mt-0.5">{hint}. Supports HTML and plain text formatting.</p>
                 </div>
                 {data[key] && (
                   <button
@@ -549,14 +657,14 @@ export default function EcomSettings() {
                 onChange={(e) => set(key, e.target.value)}
                 rows={10}
                 className="w-full glass-input p-4 text-sm rounded-lg resize-y font-mono"
-                placeholder={`Enter ${label} content (supports HTML tags like <p>, <b>, <ul>, etc.)...`}
+                placeholder={`Enter ${label} content (HTML, or plain text with line breaks, bullets like - item, numbered lists, and # headings)...`}
               />
               {data[key] && (
                 <details className="mt-2">
                   <summary className="text-xs text-slate-400 cursor-pointer select-none hover:text-slate-600">Preview rendered HTML</summary>
                   <div
                     className="mt-2 p-4 rounded-lg border border-violet-100 bg-violet-50/30 text-sm prose prose-sm max-w-none text-slate-700"
-                    dangerouslySetInnerHTML={{ __html: data[key] }}
+                    dangerouslySetInnerHTML={{ __html: formatPolicyPreviewHtml(data[key]) }}
                   />
                 </details>
               )}

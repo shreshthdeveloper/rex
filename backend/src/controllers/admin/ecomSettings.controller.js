@@ -9,6 +9,8 @@ const getSettings = asyncHandler(async (req, res) => {
   if (!settings) {
     settings = await req.models.EcomSettings.create({});
   }
+  // Ensure wallBanners is always present
+  settings.wallBanners = settings.wallBanners || [];
   res.json(new ApiResponse(200, settings));
 });
 
@@ -24,10 +26,11 @@ const updateSettings = asyncHandler(async (req, res) => {
   const allowed = [
     'storeName', 'tagline', 'logo', 'favicon',
     'primaryColor', 'secondaryColor', 'accentColor', 'theme',
-    'banners', 'marqueeText', 'marqueeEnabled',
+    'banners', 'wallBanners', 'marqueeText', 'marqueeEnabled',
     'saleAlertText', 'saleAlertEnabled',
     'productsPerRow', 'productsPerPage', 'showFeatured', 'showCategories',
     'sections', 'termsAndConditions', 'requireTermsOnSignup', 'requiredDocuments',
+    'termsContent', 'returnRefundContent', 'privacyContent', 'contactContent', 'aboutUsContent',
     'footerText', 'socialLinks',
     'modals',
     'ageVerificationEnabled', 'ageVerificationTitle', 'ageVerificationMessage',
