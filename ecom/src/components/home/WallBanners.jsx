@@ -15,7 +15,7 @@ export default function WallBanners({ banners = [] }) {
               key={`${banner.image || banner.title || 'wall'}-${index}`}
               {...cardProps}
               className={`group block overflow-hidden w-full ${banner.link ? 'cursor-pointer' : ''}`}
-            >
+            >  
               <div className="relative h-36 sm:h-44 md:h-48 w-full">
                 {banner.image ? (
                   <img

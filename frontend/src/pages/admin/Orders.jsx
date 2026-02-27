@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useToast } from '../../context/ToastContext';
 import { useTabs } from '../../context/TabContext';
-import { PageHeader, Button, Modal, Input, Select, DataTable, Badge, ConfirmDialog, GlassCard, SearchInput, Loader, TabList, Textarea, CsvImport } from '../../components/ui';
+import { PageHeader, Button, Modal, Input, Select, DataTable, Badge, ConfirmDialog, GlassCard, SearchInput, Loader, TabList, Textarea, CsvImport, SearchableSelect } from '../../components/ui';
 import { ordersAPI, customersAPI, productsAPI, warehousesAPI } from '../../api';
 import { Plus, Edit, Trash2, Eye, ShoppingCart, CreditCard, RotateCcw, Zap, Printer, Truck, CheckCircle } from 'lucide-react';
 import POS from './POS';
@@ -48,6 +48,21 @@ const STATUS_FLOW = ['placed', 'processing', 'shipped', 'in_transit', 'out_for_d
 
 const emptyItem = { product: '', quantity: 1, unitPrice: '', discount: 0 };
 const emptyForm = { customer: '', warehouse: '', items: [{ ...emptyItem }], shippingCharge: 0, notes: '', referenceNumber: '', saleType: '', orderSource: '' };
+
+const SALE_TYPE_OPTS = [
+  { value: 'retail', label: 'Retail' },
+  { value: 'wholesale', label: 'Wholesale' },
+  { value: 'online', label: 'Online' },
+];
+
+const ORDER_SOURCE_OPTS = [
+  { value: 'walk_in', label: 'Walk-in' },
+  { value: 'phone', label: 'Phone' },
+  { value: 'online', label: 'Online' },
+  { value: 'marketplace', label: 'Marketplace' },
+  { value: 'pos', label: 'POS' },
+  { value: 'website', label: 'Website' },
+];
 const emptyPayment = { amount: '', method: 'cash', reference: '', notes: '' };
 const emptyReturn = { items: [{ lineItem: '', returnQty: 1, reason: '' }] };
 
@@ -209,12 +224,22 @@ export default function Orders() {
   useEffect(() => { fetchOrders(); }, [fetchOrders]);
 
   /* ───── CREATE / EDIT ───── */
-  const openCreate = () => { setEditing(null); setForm({ ...emptyForm, items: [{ ...emptyItem }] }); setModalOpen(true); };
+  const openCreate = () => {
+    setEditing(null);
+    setForm({
+      ...emptyForm,
+      items: [{ ...emptyItem }],
+      warehouse: warehouseOpts[0]?.value || '',
+      saleType: SALE_TYPE_OPTS[0]?.value || '',
+      orderSource: ORDER_SOURCE_OPTS[0]?.value || '',
+    });
+    setModalOpen(true);
+  };
   const openEdit = (o) => {
     setEditing(o);
     setForm({
       customer: o.customer?._id || o.customer || '',
-      warehouse: o.warehouse?._id || o.warehouse || '',
+      warehouse: o.warehouse?._id || o.warehouse || warehouseOpts[0]?.value || '',
       items: (o.items || []).map((i) => ({
         product: i.product?._id || i.product || '',
         _name: i.productSnapshot?.name || i.product?.name || i.name || 'Product',
@@ -227,8 +252,8 @@ export default function Orders() {
       shippingCharge: o.shippingCharge || 0,
       notes: o.notes || '',
       referenceNumber: o.referenceNumber || '',
-      saleType: o.saleType || '',
-      orderSource: o.orderSource || '',
+      saleType: o.saleType || SALE_TYPE_OPTS[0]?.value || '',
+      orderSource: o.orderSource || ORDER_SOURCE_OPTS[0]?.value || '',
     });
     // Pre-fetch stock for existing items
     (o.items || []).forEach((i) => {
@@ -871,13 +896,13 @@ export default function Orders() {
       <Modal open={modalOpen} onClose={closeModal} title={editing ? 'Edit Order' : 'Create Order'} size="full">
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
-            <Select label="Customer *" options={[{ value: '', label: 'Select customer' }, ...customerOpts]} value={form.customer} onChange={setFormField('customer')} />
+            <SearchableSelect label="Customer *" options={[{ value: '', label: 'Select customer' }, ...customerOpts]} value={form.customer} onChange={setFormField('customer')} placeholder="Select customer" />
             <Select label="Warehouse *" options={[{ value: '', label: 'Select warehouse' }, ...warehouseOpts]} value={form.warehouse} onChange={setFormField('warehouse')} />
           </div>
           <div className="grid grid-cols-3 gap-3">
             <Input label="Reference #" value={form.referenceNumber} onChange={setFormField('referenceNumber')} placeholder="Ref / PO number" />
-            <Select label="Sale Type" options={[{ value: '', label: 'Select' }, { value: 'retail', label: 'Retail' }, { value: 'wholesale', label: 'Wholesale' }, { value: 'online', label: 'Online' }]} value={form.saleType} onChange={setFormField('saleType')} />
-            <Select label="Order Source" options={[{ value: '', label: 'Select' }, { value: 'walk_in', label: 'Walk-in' }, { value: 'phone', label: 'Phone' }, { value: 'online', label: 'Online' }, { value: 'marketplace', label: 'Marketplace' }, { value: 'pos', label: 'POS' }, { value: 'website', label: 'Website' }]} value={form.orderSource} onChange={setFormField('orderSource')} />
+            <Select label="Sale Type" options={[{ value: '', label: 'Select' }, ...SALE_TYPE_OPTS]} value={form.saleType} onChange={setFormField('saleType')} />
+            <Select label="Order Source" options={[{ value: '', label: 'Select' }, ...ORDER_SOURCE_OPTS]} value={form.orderSource} onChange={setFormField('orderSource')} />
           </div>
           {renderItemsEditor()}
           <div className="grid grid-cols-2 gap-3">
