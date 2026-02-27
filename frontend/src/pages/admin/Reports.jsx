@@ -390,6 +390,7 @@ export default function Reports() {
             data={txnLogData}
             loading={loading}
             emptyMessage="No transaction log entries"
+            paginated={false}
           />
           {txnLogPagination && txnLogPagination.totalPages > 1 && (
             <div className="mt-4">

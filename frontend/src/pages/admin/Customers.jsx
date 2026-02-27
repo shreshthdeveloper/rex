@@ -149,7 +149,8 @@ export default function Customers() {
   const closeModal = () => { setModalOpen(false); setEditing(null); setForm(emptyForm); };
 
   const handleSave = async () => {
-    if (!form.name.trim() || !form.email.trim()) return toast.error('Name and email are required');
+    if (!form.name.trim()) return toast.error('Name is required');
+    if (!form.email.trim() && !form.phone.trim()) return toast.error('Email or phone number is required');
     if (!editing && !form.password.trim()) return toast.error('Password is required for new customers');
     try {
       setSaving(true);

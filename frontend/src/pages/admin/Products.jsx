@@ -12,7 +12,7 @@ const emptyForm = {
   variantAttribute: '',
 };
 
-const emptyVariantRow = { variantValue: '', name: '', sku: '', costPrice: '', basePrice: '', _autoName: true, _autoSku: true, openingQty: '', openingSupplierPrice: '', images: [], _removedImageIds: [] };
+const emptyVariantRow = { variantValue: '', name: '', sku: '', costPrice: '', basePrice: '', _autoName: true, _autoSku: true, openingQty: '', images: [], _removedImageIds: [] };
 
 const typeOptions = [
   { value: 'single', label: 'Single' },
@@ -91,7 +91,10 @@ export default function Products() {
   const [formImages, setFormImages] = useState([]);       // { url, altText, isPrimary, _existingId }
   const [removedImageIds, setRemovedImageIds] = useState([]);
   const [uploadingImage, setUploadingImage] = useState(false);
+  const [imageInputMode, setImageInputMode] = useState('upload'); // 'upload' | 'url'
+  const [productUrlInput, setProductUrlInput] = useState('');
   const productFileRef = useRef(null);
+  const skuEditedRef = useRef(false); // tracks if user manually edited SKU
 
   // Variant image upload
   const [uploadingVariantIdx, setUploadingVariantIdx] = useState(null);
@@ -165,12 +168,15 @@ export default function Products() {
 
   const openCreate = () => {
     setEditing(null);
+    skuEditedRef.current = false;
     setForm(emptyForm);
     setFormVariants([]);
     setRemovedVariantIds([]);
     setFormImages([]);
     setRemovedImageIds([]);
-    setOpeningStockRows(warehouseList.map(w => ({ warehouseId: w._id, warehouseName: w.name, warehouseCode: w.code, quantity: '', supplierPrice: '' })));
+    setImageInputMode('upload');
+    setProductUrlInput('');
+    setOpeningStockRows(warehouseList.map(w => ({ warehouseId: w._id, warehouseName: w.name, warehouseCode: w.code, quantity: '' })));
     setParentOpeningWhId(warehouseList[0]?._id || '');
     setModalOpen(true);
   };
@@ -206,9 +212,12 @@ export default function Products() {
     }
     setFormImages((p.images || []).map(img => ({ url: img.url, altText: img.altText || '', isPrimary: !!img.isPrimary, _existingId: img._id })));
     setRemovedImageIds([]);
+    skuEditedRef.current = true;
+    setImageInputMode('upload');
+    setProductUrlInput('');
     setModalOpen(true);
   };
-  const closeModal = () => { setModalOpen(false); setEditing(null); setForm(emptyForm); setFormVariants([]); setRemovedVariantIds([]); setFormImages([]); setRemovedImageIds([]); setOpeningStockRows([]); setParentOpeningWhId(''); };
+  const closeModal = () => { setModalOpen(false); setEditing(null); setForm(emptyForm); setFormVariants([]); setRemovedVariantIds([]); setFormImages([]); setRemovedImageIds([]); setOpeningStockRows([]); setParentOpeningWhId(''); setImageInputMode('upload'); setProductUrlInput(''); };
 
   /* ───── INLINE VARIANT HELPERS ───── */
   const addFormVariant = () => setFormVariants(prev => [
@@ -219,7 +228,6 @@ export default function Products() {
       basePrice: form.basePrice || '',
       sku: generateRandomSku(form.sku || form.name),
       openingQty: '',
-      openingSupplierPrice: '',
     },
   ]);
 
@@ -271,6 +279,13 @@ export default function Products() {
     } else {
       setFormImages(prev => prev.filter((_, i) => i !== pendingIdx));
     }
+  };
+
+  const handleAddImageUrl = () => {
+    const url = productUrlInput.trim();
+    if (!url) return;
+    setFormImages(prev => [...prev, { url, altText: '', isPrimary: prev.length === 0, _existingId: null }]);
+    setProductUrlInput('');
   };
 
   const handleVariantImageUpload = async (e) => {
@@ -372,7 +387,6 @@ export default function Products() {
               createdVariantStock.push({
                 productId: variantId,
                 quantity: Number(v.openingQty),
-                ...(v.openingSupplierPrice !== '' ? { supplierPrice: Number(v.openingSupplierPrice) } : {}),
               });
             }
             // Save variant images (multiple supported)
@@ -423,7 +437,6 @@ export default function Products() {
               items: [{
                 productId: parentId,
                 quantity: Number(row.quantity),
-                ...(row.supplierPrice !== '' ? { supplierPrice: Number(row.supplierPrice) } : {}),
               }],
             });
             stockSaved++;
@@ -729,10 +742,17 @@ export default function Products() {
           <div>
             <h4 className="text-xs font-semibold text-violet-600 uppercase tracking-wider mb-3">Basic Info</h4>
             <div className="grid grid-cols-2 gap-3">
-              <Input label="Name" value={form.name} onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))} placeholder="Product name" />
+              <Input label="Name" value={form.name} onChange={(e) => {
+                const name = e.target.value;
+                setForm((p) => ({
+                  ...p,
+                  name,
+                  ...(!skuEditedRef.current && !editing ? { sku: generateRandomSku(name) } : {}),
+                }));
+              }} placeholder="Product name" />
               <div className="col-span-2">
                 <div className="flex gap-1.5 items-end">
-                  <Input label="SKU" value={form.sku} onChange={set('sku')} placeholder="PRD-001" className="flex-1" />
+                  <Input label="SKU" value={form.sku} onChange={(e) => { skuEditedRef.current = true; set('sku')(e); }} placeholder="PRD-001" className="flex-1" />
                   <Button
                     type="button"
                     variant="ghost"
@@ -805,7 +825,6 @@ export default function Products() {
                       <tr className="bg-slate-50/80 border-b border-slate-200/60">
                         <th className="py-2 px-3 text-left font-semibold text-slate-500 uppercase tracking-wide">Warehouse</th>
                         <th className="py-2 px-3 text-center font-semibold text-slate-500 uppercase tracking-wide w-28">Quantity</th>
-                        <th className="py-2 px-3 text-center font-semibold text-slate-500 uppercase tracking-wide w-32">Supplier Price</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -824,15 +843,6 @@ export default function Products() {
                               value={row.quantity}
                               onChange={(e) => setOpeningStockRows(prev => prev.map((r, i) => i === idx ? { ...r, quantity: e.target.value } : r))}
                               placeholder="—"
-                              className="w-full text-center bg-transparent border border-slate-200 rounded px-2 py-1 text-slate-800 focus:outline-none focus:border-violet-400 focus:ring-1 focus:ring-violet-400/30 placeholder-slate-300"
-                            />
-                          </td>
-                          <td className="py-1.5 px-3">
-                            <input
-                              type="number" min="0" step="0.01"
-                              value={row.supplierPrice}
-                              onChange={(e) => setOpeningStockRows(prev => prev.map((r, i) => i === idx ? { ...r, supplierPrice: e.target.value } : r))}
-                              placeholder="Optional"
                               className="w-full text-center bg-transparent border border-slate-200 rounded px-2 py-1 text-slate-800 focus:outline-none focus:border-violet-400 focus:ring-1 focus:ring-violet-400/30 placeholder-slate-300"
                             />
                           </td>
@@ -862,6 +872,35 @@ export default function Products() {
             <h4 className="text-xs font-semibold text-violet-600 uppercase tracking-wider mb-3">
               <Image size={14} className="inline mr-1" />Images
             </h4>
+            {/* Mode toggle */}
+            <div className="flex gap-1 mb-2 border border-slate-200 rounded-lg p-0.5 w-fit">
+              <button type="button"
+                className={`px-3 py-1 text-xs rounded-md transition-colors ${imageInputMode === 'upload' ? 'bg-violet-100 text-violet-700 font-medium' : 'text-slate-500 hover:bg-slate-50'}`}
+                onClick={() => setImageInputMode('upload')}>
+                Upload file
+              </button>
+              <button type="button"
+                className={`px-3 py-1 text-xs rounded-md transition-colors ${imageInputMode === 'url' ? 'bg-violet-100 text-violet-700 font-medium' : 'text-slate-500 hover:bg-slate-50'}`}
+                onClick={() => setImageInputMode('url')}>
+                Image URL
+              </button>
+            </div>
+            {imageInputMode === 'url' && (
+              <div className="flex gap-2 mb-2">
+                <input
+                  type="url"
+                  value={productUrlInput}
+                  onChange={(e) => setProductUrlInput(e.target.value)}
+                  placeholder="https://example.com/image.jpg"
+                  className="flex-1 glass-input px-3 py-2 text-sm"
+                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddImageUrl(); } }}
+                />
+                <button type="button" onClick={handleAddImageUrl}
+                  className="px-3 py-1.5 text-xs bg-violet-600 text-white rounded-lg hover:bg-violet-700 transition-colors font-medium">
+                  Add
+                </button>
+              </div>
+            )}
             <div className="flex flex-wrap gap-2">
               {formImages.map((img, i) => (
                 <div key={img._existingId || `p-${i}`} className="relative w-16 h-16 rounded-lg overflow-hidden border border-slate-200 bg-slate-50 group flex items-center justify-center">
@@ -873,11 +912,13 @@ export default function Products() {
                   </button>
                 </div>
               ))}
-              <button type="button" onClick={() => productFileRef.current?.click()} disabled={uploadingImage}
-                className="w-16 h-16 rounded-lg border-2 border-dashed border-slate-300 hover:border-violet-400 flex flex-col items-center justify-center text-slate-400 hover:text-violet-500 transition-colors disabled:opacity-50">
-                <Camera size={16} />
-                <span className="text-[9px] mt-0.5">{uploadingImage ? '…' : 'Upload'}</span>
-              </button>
+              {imageInputMode === 'upload' && (
+                <button type="button" onClick={() => productFileRef.current?.click()} disabled={uploadingImage}
+                  className="w-16 h-16 rounded-lg border-2 border-dashed border-slate-300 hover:border-violet-400 flex flex-col items-center justify-center text-slate-400 hover:text-violet-500 transition-colors disabled:opacity-50">
+                  <Camera size={16} />
+                  <span className="text-[9px] mt-0.5">{uploadingImage ? '…' : 'Upload'}</span>
+                </button>
+              )}
             </div>
           </div>
 
@@ -1043,7 +1084,6 @@ export default function Products() {
                       <tr className="bg-slate-50/80 border-b border-slate-200/60">
                         <th className="py-2 px-3 text-left font-semibold text-slate-500 uppercase tracking-wide">Variant</th>
                         <th className="py-2 px-3 text-center font-semibold text-slate-500 uppercase tracking-wide w-36">Quantity</th>
-                        <th className="py-2 px-3 text-center font-semibold text-slate-500 uppercase tracking-wide w-40">Supplier Price</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1070,25 +1110,6 @@ export default function Products() {
                                   type="button"
                                   title="Apply this quantity to all rows"
                                   onClick={() => copyOpeningToAll('openingQty', v.openingQty)}
-                                  className="flex-shrink-0 text-violet-400 hover:text-violet-600 transition-colors p-0.5 rounded hover:bg-violet-50"
-                                >
-                                  <CheckCheck size={13} />
-                                </button>
-                              </div>
-                            </td>
-                            <td className="py-1.5 px-3">
-                              <div className="flex items-center gap-1">
-                                <input
-                                  type="number" min="0" step="0.01"
-                                  value={v.openingSupplierPrice}
-                                  onChange={(e) => updateFormVariant(trueIdx, 'openingSupplierPrice', e.target.value)}
-                                  placeholder="Optional"
-                                  className="w-full text-center bg-transparent border border-slate-200 rounded px-2 py-1 text-slate-800 focus:outline-none focus:border-violet-400 focus:ring-1 focus:ring-violet-400/30 placeholder-slate-300"
-                                />
-                                <button
-                                  type="button"
-                                  title="Apply this supplier price to all rows"
-                                  onClick={() => copyOpeningToAll('openingSupplierPrice', v.openingSupplierPrice)}
                                   className="flex-shrink-0 text-violet-400 hover:text-violet-600 transition-colors p-0.5 rounded hover:bg-violet-50"
                                 >
                                   <CheckCheck size={13} />

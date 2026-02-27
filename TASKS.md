@@ -4,6 +4,17 @@ All completed tasks are recorded here. After finishing any task or feature, appe
 
 ---
 
+## 2026-02-27 21:18 — 6 UI/UX fixes (Customer validation, SKU auto-gen, Supplier Price removal, Text size, Image URL, Double pagination)
+1. **Customer form**: email OR phone is now required (not both mandatory)
+2. **Product SKU**: auto-generates from product name as user types; manually editing SKU locks it; refresh button still works
+3. **Supplier price removed from opening stock**: removed from Products create form (single + variant tables), StockManagement opening stock tab — backend payload no longer sends supplierPrice
+4. **Increased global text size**: `html { font-size: 112.5% }` in `index.css` makes all rem-based sizes ~12.5% larger
+5. **Product image URL input**: image section now has Upload/URL toggle; URL mode shows input + Add button
+6. **Fixed double pagination**: all 4 StockManagement tabs (Overview, Adjustments, Transfers, Movements) and Reports transaction log now have `paginated={false}` on DataTable to prevent internal client pagination conflicting with external server pagination
+**Files:** `frontend/src/pages/admin/Customers.jsx`, `frontend/src/pages/admin/Products.jsx`, `frontend/src/pages/admin/StockManagement.jsx`, `frontend/src/pages/admin/Reports.jsx`, `frontend/src/index.css`
+
+---
+
 ## 2026-02-27 20:47 — Server-side pagination for key tables
 Converted core admin tables to true server-side pagination (Customers, Products, Orders) with controlled pagination UI in shared `DataTable`. Also added backend order list filtering for `search` and `paymentStatus` to support paginated filtered queries.
 **Files:** `frontend/src/components/ui/index.jsx`, `frontend/src/pages/admin/Customers.jsx`, `frontend/src/pages/admin/Products.jsx`, `frontend/src/pages/admin/Orders.jsx`, `backend/src/controllers/admin/orders.controller.js`

@@ -668,7 +668,7 @@ export default function StockManagement() {
       <div className="flex items-center gap-3 mb-4">
         <SearchInput value={search} onChange={(value) => { setSearch(value); setPage(1); }} placeholder="Search products..." />
       </div>
-      <DataTable columns={stockColumns} data={stockList} loading={loading} emptyMessage="No stock records found" />
+      <DataTable columns={stockColumns} data={stockList} loading={loading} emptyMessage="No stock records found" paginated={false} />
       <Pagination page={page} totalPages={totalPages} onPageChange={setPage} className="mt-4" />
 
       {/* ── Product History Modal ── */}
@@ -739,7 +739,7 @@ export default function StockManagement() {
       }
       return [
         ...prev,
-        ...incoming.map(s => ({ product: s.product, quantity: '', supplierPrice: '' })),
+        ...incoming.map(s => ({ product: s.product, quantity: '' })),
       ];
     });
   };
@@ -756,7 +756,7 @@ export default function StockManagement() {
       setSavingBulk(true);
       const res = await stockAPI.bulkOpeningByWarehouse({
         warehouseId: bulkWhId,
-        items: validItems.map(i => ({ productId: i.product._id, quantity: Number(i.quantity), supplierPrice: i.supplierPrice ? Number(i.supplierPrice) : undefined })),
+        items: validItems.map(i => ({ productId: i.product._id, quantity: Number(i.quantity) })),
       });
       const data = res.data;
       toast.success(`${data?.success?.length || 0} set, ${data?.skipped?.length || 0} skipped`);
@@ -773,7 +773,7 @@ export default function StockManagement() {
         <h3 className="text-lg font-semibold text-slate-800 mb-1 flex items-center gap-2">
           <Layers size={20} className="text-violet-600" /> Set Opening Stock
         </h3>
-        <p className="text-xs text-slate-500 mb-4">Select a warehouse, search for products, then fill in quantity and supplier price before saving.</p>
+        <p className="text-xs text-slate-500 mb-4">Select a warehouse, search for products, then fill in the quantity before saving.</p>
         <p className="text-xs text-amber-600 mb-4">Note: Opening stock can only be set once per SKU per warehouse. Duplicate entries will be skipped.</p>
         <form onSubmit={handleBulkByWarehouse} className="space-y-4">
           <div className="max-w-xs">
@@ -791,13 +791,12 @@ export default function StockManagement() {
                   <tr className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                     <th className="py-2.5 px-3 text-left">Product</th>
                     <th className="py-2.5 px-3 text-center w-32">Quantity *</th>
-                    <th className="py-2.5 px-3 text-center w-36">Supplier Price</th>
                     <th className="py-2.5 px-3 w-10"></th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                   {bulkWhItems.length === 0 ? (
-                    <tr><td colSpan={4} className="py-6 text-center text-slate-400 text-xs">Search and add products above</td></tr>
+                    <tr><td colSpan={3} className="py-6 text-center text-slate-400 text-xs">Search and add products above</td></tr>
                   ) : bulkWhItems.map((item, idx) => (
                     <tr key={item.product._id} className="hover:bg-gray-50 transition-colors">
                       <td className="py-2.5 px-3">
@@ -813,15 +812,6 @@ export default function StockManagement() {
                           value={item.quantity}
                           onChange={(e) => updateBulkWhItem(idx, 'quantity', e.target.value)}
                           placeholder="0"
-                        />
-                      </td>
-                      <td className="py-2.5 px-3">
-                        <input
-                          type="number" min="0" step="0.01"
-                          className="w-full text-center border border-gray-200 rounded px-2 py-1.5 text-sm text-slate-900 focus:outline-none focus:ring-1 focus:ring-violet-400"
-                          value={item.supplierPrice}
-                          onChange={(e) => updateBulkWhItem(idx, 'supplierPrice', e.target.value)}
-                          placeholder="Optional"
                         />
                       </td>
                       <td className="py-2.5 px-3 text-center">
@@ -851,7 +841,7 @@ export default function StockManagement() {
           <Plus size={16} className="mr-1" /> New Adjustment
         </Button>
       </div>
-      <DataTable columns={adjColumns} data={adjustments} loading={loading} emptyMessage="No adjustments found" />
+      <DataTable columns={adjColumns} data={adjustments} loading={loading} emptyMessage="No adjustments found" paginated={false} />
       <Pagination page={page} totalPages={totalPages} onPageChange={setPage} className="mt-4" />
 
       {/* ─── Create Adjustment Modal ─── */}
@@ -1108,7 +1098,7 @@ export default function StockManagement() {
           <ArrowLeftRight size={16} className="mr-1" /> New Transfer
         </Button>
       </div>
-      <DataTable columns={txColumns} data={transfers} loading={loading} emptyMessage="No transfers found" />
+      <DataTable columns={txColumns} data={transfers} loading={loading} emptyMessage="No transfers found" paginated={false} />
       <Pagination page={page} totalPages={totalPages} onPageChange={setPage} className="mt-4" />
 
       <Modal open={txModalOpen} onClose={() => setTxModalOpen(false)} title="Create Stock Transfer" size="xl">
@@ -1457,7 +1447,7 @@ export default function StockManagement() {
       <div className="flex items-center gap-3 mb-4">
         <SearchInput value={search} onChange={(value) => { setSearch(value); setPage(1); }} placeholder="Search by product name..." />
       </div>
-      <DataTable columns={mvColumns} data={movements} loading={loading} emptyMessage="No movements found" />
+      <DataTable columns={mvColumns} data={movements} loading={loading} emptyMessage="No movements found" paginated={false} />
       <Pagination page={page} totalPages={totalPages} onPageChange={setPage} className="mt-4" />
     </>
   );
