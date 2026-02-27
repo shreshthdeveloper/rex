@@ -879,3 +879,14 @@ egisterOrgModels in index.js)
 **Files:**
 - Ecom/src/index.css
 - Ecom/src/pages/ProductDetailPage.jsx
+
+---
+
+## 2026-02-27 18:55 — SaaS tenant DB isolation fix (orgs opening same data)
+
+- Fixed Mongo connection URI construction for multi-tenant DBs in `backend/src/config/database.js`.
+- Replaced naive string concatenation (`${mongoUri}/${dbName}`) with URL-safe DB path replacement logic.
+- This ensures each org connection (`org_<slug>`) and superadmin connection target their intended databases even when `MONGODB_URI` already contains a path/query (Atlas URI).
+
+**Files:**
+- backend/src/config/database.js
