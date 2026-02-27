@@ -4,6 +4,18 @@ All completed tasks are recorded here. After finishing any task or feature, appe
 
 ---
 
+## 2026-02-27 20:47 — Server-side pagination for key tables
+Converted core admin tables to true server-side pagination (Customers, Products, Orders) with controlled pagination UI in shared `DataTable`. Also added backend order list filtering for `search` and `paymentStatus` to support paginated filtered queries.
+**Files:** `frontend/src/components/ui/index.jsx`, `frontend/src/pages/admin/Customers.jsx`, `frontend/src/pages/admin/Products.jsx`, `frontend/src/pages/admin/Orders.jsx`, `backend/src/controllers/admin/orders.controller.js`
+
+---
+
+## 2026-02-27 20:25 — Global table pagination
+Implemented default pagination in the shared `DataTable` component so list pages (including Products, Customers, Orders, and other admin/superadmin tables) now paginate automatically.
+**Files:** `frontend/src/components/ui/index.jsx`
+
+---
+
 ## 2026-02-27 — Wall banners saving fix
 Fixed wall banners not saving from ERP for puff-stuff org. Issue was backend server was crashed, preventing API updates. Added default [] to wallBanners schema and ensured it's always included in get response. Wall banners now persist correctly.
 **Files:** `backend/src/models/org/EcomSettings.js`, `backend/src/controllers/admin/ecomSettings.controller.js`

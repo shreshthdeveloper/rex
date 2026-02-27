@@ -20,6 +20,7 @@ const typeOptions = [
 ];
 
 const generateSlug = (n) => n.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+const PAGE_SIZE = 20;
 
 const generateRandomSku = (prefix = '') => {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -47,6 +48,8 @@ export default function Products() {
   const [search, setSearch] = useState('');
   const [filterType, setFilterType] = useState('');
   const [filterCat, setFilterCat] = useState('');
+  const [page, setPage] = useState(1);
+  const [pagination, setPagination] = useState({ total: 0, page: 1, pages: 1, limit: PAGE_SIZE });
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(emptyForm);
@@ -128,20 +131,24 @@ export default function Products() {
       if (search) params.search = search;
       if (filterType) params.type = filterType;
       if (filterCat) params.category = filterCat;
+      params.page = page;
+      params.limit = PAGE_SIZE;
       const [res, stockRes] = await Promise.all([
         productsAPI.list(params),
         productsAPI.stockSummary(),
       ]);
       setProducts(res.data?.products || []);
+      setPagination(res.data?.pagination || { total: 0, page, pages: 1, limit: PAGE_SIZE });
       setStockSummary(stockRes.data || {});
     } catch (err) {
       toast.error(err.message || 'Failed to load products');
     } finally {
       setLoading(false);
     }
-  }, [search, filterType, filterCat]);
+  }, [search, filterType, filterCat, page]);
 
   useEffect(() => { fetchProducts(); }, [fetchProducts]);
+  useEffect(() => { setPage(1); }, [search, filterType, filterCat]);
 
   // When stock modal opens on a parent product, lazy-load its variants
   useEffect(() => {
@@ -505,12 +512,6 @@ export default function Products() {
     }
   };
 
-  // Filters
-  const filtered = products.filter((p) => {
-    const q = search.toLowerCase();
-    return p.name?.toLowerCase().includes(q) || p.sku?.toLowerCase().includes(q);
-  });
-
   const PRODUCT_CSV_COLS = [
     { key: 'name', label: 'Name' },
     { key: 'sku', label: 'SKU' },
@@ -706,7 +707,18 @@ export default function Products() {
           <Select value={filterCat} onChange={(e) => setFilterCat(e.target.value)}
             options={categoryOpts} placeholder="All Categories" className="w-44" />
         </div>
-        <DataTable columns={columns} data={filtered} loading={loading} emptyMessage="No products found" scrollable />
+        <DataTable
+          columns={columns}
+          data={products}
+          loading={loading}
+          emptyMessage="No products found"
+          scrollable
+          serverPagination
+          currentPage={page}
+          totalItems={pagination.total}
+          pageSize={PAGE_SIZE}
+          onPageChange={setPage}
+        />
       </GlassCard>
 
       {/* Create / Edit Modal */}

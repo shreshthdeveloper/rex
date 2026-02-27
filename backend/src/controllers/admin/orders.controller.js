@@ -71,10 +71,11 @@ const calcLineItem = (item) => {
 const round2 = (value) => Math.round((Number(value) || 0) * 100) / 100;
 
 const list = asyncHandler(async (req, res) => {
-  const { page, limit, status, customer, warehouse, startDate, endDate } = req.query;
+  const { page, limit, status, customer, warehouse, startDate, endDate, paymentStatus, search } = req.query;
   const { skip, limit: lim, page: pg } = paginate(page, limit);
   const filter = {};
   if (status) filter.status = status;
+  if (paymentStatus) filter.paymentStatus = paymentStatus;
   if (customer) filter.customer = customer;
   if (warehouse) filter.warehouse = warehouse;
   if (startDate || endDate) {
@@ -82,6 +83,19 @@ const list = asyncHandler(async (req, res) => {
     if (startDate) filter.orderDate.$gte = new Date(startDate);
     if (endDate) filter.orderDate.$lte = new Date(endDate);
   }
+
+  if (search) {
+    const rx = { $regex: search, $options: 'i' };
+    const matchingCustomers = await req.models.Customer.find({
+      $or: [{ name: rx }, { email: rx }, { phone: rx }],
+    }).select('_id').lean();
+    const customerIds = matchingCustomers.map((c) => c._id);
+    filter.$or = [
+      { orderNumber: rx },
+      ...(customerIds.length ? [{ customer: { $in: customerIds } }] : []),
+    ];
+  }
+
   const [orders, total] = await Promise.all([
     req.models.Order.find(filter)
       .populate('customer', 'name email phone')

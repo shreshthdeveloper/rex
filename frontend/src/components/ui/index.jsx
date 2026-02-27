@@ -1,5 +1,5 @@
 /* Reusable UI components – White & Violet Theme */
-import { useState, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { X, ChevronLeft, ChevronRight, Search, Loader2, Upload, Download } from 'lucide-react';
 
@@ -289,7 +289,45 @@ export function PageHeader({ title, subtitle, actions }) {
 }
 
 /* ─── DataTable ─── */
-export function DataTable({ columns, data = [], loading, onRowClick, emptyMessage = 'No records found', scrollable = false }) {
+export function DataTable({
+  columns,
+  data = [],
+  loading,
+  onRowClick,
+  emptyMessage = 'No records found',
+  scrollable = false,
+  paginated = true,
+  pageSize = 10,
+  serverPagination = false,
+  currentPage,
+  totalItems,
+  onPageChange,
+}) {
+  const [internalPage, setInternalPage] = useState(1);
+  const safePageSize = Math.max(1, Number(pageSize) || 10);
+  const page = serverPagination ? Math.max(1, Number(currentPage) || 1) : internalPage;
+  const totalCount = serverPagination ? Math.max(0, Number(totalItems) || 0) : data.length;
+  const totalPages = paginated ? Math.max(1, Math.ceil(totalCount / safePageSize)) : 1;
+  const visibleData = paginated && !serverPagination
+    ? data.slice((page - 1) * safePageSize, page * safePageSize)
+    : data;
+
+  useEffect(() => {
+    if (!serverPagination) setInternalPage(1);
+  }, [data.length, safePageSize, paginated, serverPagination]);
+
+  useEffect(() => {
+    if (!serverPagination && page > totalPages) setInternalPage(totalPages);
+  }, [page, totalPages, serverPagination]);
+
+  const handlePageChange = (nextPage) => {
+    if (serverPagination) {
+      onPageChange?.(nextPage);
+      return;
+    }
+    setInternalPage(nextPage);
+  };
+
   const tableMinW = scrollable ? 'min-w-[1100px]' : 'w-full';
   if (loading) {
     return (
@@ -322,33 +360,44 @@ export function DataTable({ columns, data = [], loading, onRowClick, emptyMessag
   }
   if (!data.length) return <EmptyState title={emptyMessage} />;
   return (
-    <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
-      <table className={`${tableMinW} glass-table`}>
-        <thead>
-          <tr>
-            {columns.map((col) => (
-              <th key={col.key} className={`px-5 py-3 text-left${scrollable ? ' whitespace-nowrap' : ''}`} style={col.width ? { width: col.width } : {}}>
-                {col.label}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {data.map((row, i) => (
-            <tr
-              key={row._id || i}
-              className={onRowClick ? 'cursor-pointer' : ''}
-              onClick={() => onRowClick?.(row)}
-            >
+    <div>
+      <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
+        <table className={`${tableMinW} glass-table`}>
+          <thead>
+            <tr>
               {columns.map((col) => (
-                <td key={col.key} className={`px-5 py-3 text-sm text-slate-700${scrollable ? ' whitespace-nowrap' : ''}`}>
-                  {col.render ? col.render(row) : row[col.key]}
-                </td>
+                <th key={col.key} className={`px-5 py-3 text-left${scrollable ? ' whitespace-nowrap' : ''}`} style={col.width ? { width: col.width } : {}}>
+                  {col.label}
+                </th>
               ))}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {visibleData.map((row, i) => (
+              <tr
+                key={row._id || `${page}-${i}`}
+                className={onRowClick ? 'cursor-pointer' : ''}
+                onClick={() => onRowClick?.(row)}
+              >
+                {columns.map((col) => (
+                  <td key={col.key} className={`px-5 py-3 text-sm text-slate-700${scrollable ? ' whitespace-nowrap' : ''}`}>
+                    {col.render ? col.render(row) : row[col.key]}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {paginated && (
+        totalPages > 1 ? (
+          <Pagination page={page} totalPages={totalPages} onPageChange={handlePageChange} />
+        ) : serverPagination && totalCount > 0 ? (
+          <div className="flex items-center justify-center mt-4 text-xs text-slate-500">
+            Showing {totalCount} {totalCount === 1 ? 'item' : 'items'}
+          </div>
+        ) : null
+      )}
     </div>
   );
 }

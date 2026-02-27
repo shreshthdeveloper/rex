@@ -63,6 +63,7 @@ const ORDER_SOURCE_OPTS = [
   { value: 'pos', label: 'POS' },
   { value: 'website', label: 'Website' },
 ];
+const PAGE_SIZE = 20;
 const emptyPayment = { amount: '', method: 'cash', reference: '', notes: '' };
 const emptyReturn = { items: [{ lineItem: '', returnQty: 1, reason: '' }] };
 
@@ -88,6 +89,8 @@ export default function Orders() {
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
   const [filterPayStatus, setFilterPayStatus] = useState('');
+  const [page, setPage] = useState(1);
+  const [pagination, setPagination] = useState({ total: 0, page: 1, pages: 1, limit: PAGE_SIZE });
 
   // Dropdown options
   const [customerOpts, setCustomerOpts] = useState([]);
@@ -156,7 +159,11 @@ export default function Orders() {
   useEffect(() => {
     const load = async () => {
       try {
-        const [cRes, pRes, wRes] = await Promise.all([customersAPI.list(), productsAPI.list(), warehousesAPI.list()]);
+        const [cRes, pRes, wRes] = await Promise.all([
+          customersAPI.list({ limit: 500 }),
+          productsAPI.list({ limit: 500 }),
+          warehousesAPI.list({ limit: 500 }),
+        ]);
         setCustomerOpts((cRes.data?.customers || []).map((c) => ({ value: c._id, label: c.name })));
         const prods = pRes.data?.products || [];
         setProductOpts(prods.map((p) => ({ value: p._id, label: `${p.name} (${p.sku})` })));
@@ -208,20 +215,22 @@ export default function Orders() {
   const fetchOrders = useCallback(async () => {
     try {
       setLoading(true);
-      const params = {};
+      const params = { page, limit: PAGE_SIZE };
       if (search) params.search = search;
       if (filterStatus) params.status = filterStatus;
       if (filterPayStatus) params.paymentStatus = filterPayStatus;
       const res = await ordersAPI.list(params);
       setOrders(res.data?.orders || []);
+      setPagination(res.data?.pagination || { total: 0, page, pages: 1, limit: PAGE_SIZE });
     } catch (err) {
       toast.error(err.message || 'Failed to load orders');
     } finally {
       setLoading(false);
     }
-  }, [search, filterStatus, filterPayStatus]);
+  }, [search, filterStatus, filterPayStatus, page]);
 
   useEffect(() => { fetchOrders(); }, [fetchOrders]);
+  useEffect(() => { setPage(1); }, [search, filterStatus, filterPayStatus]);
 
   /* ───── CREATE / EDIT ───── */
   const openCreate = () => {
@@ -490,18 +499,6 @@ export default function Orders() {
       fetchOrders();
     } catch (err) { toast.error(err.message || 'Failed to approve return'); }
   };
-
-  /* ───── FILTER ───── */
-  const filtered = orders.filter((o) => {
-    if (search) {
-      const s = search.toLowerCase();
-      const match = (o.orderNumber || '').toLowerCase().includes(s) || (o.customer?.name || '').toLowerCase().includes(s);
-      if (!match) return false;
-    }
-    if (filterStatus && o.status !== filterStatus) return false;
-    if (filterPayStatus && o.paymentStatus !== filterPayStatus) return false;
-    return true;
-  });
 
   const columns = [
     { key: 'orderNumber', label: 'Order #', render: (r) => <span className="font-mono text-slate-700 font-semibold">{r.orderNumber}</span> },
@@ -838,7 +835,7 @@ export default function Orders() {
 
   return (
     <div className="space-y-4">
-      <PageHeader title="Orders" subtitle={`${orders.length} orders`} actions={
+      <PageHeader title="Orders" subtitle={`${pagination.total || 0} orders`} actions={
         <div className="flex items-center gap-2">
           <CsvImport
             columns={[
@@ -890,7 +887,17 @@ export default function Orders() {
         </div>
       </GlassCard>
 
-      <DataTable columns={columns} data={filtered} emptyMessage="No orders found" />
+      <DataTable
+        columns={columns}
+        data={orders}
+        loading={loading}
+        emptyMessage="No orders found"
+        serverPagination
+        currentPage={page}
+        totalItems={pagination.total}
+        pageSize={PAGE_SIZE}
+        onPageChange={setPage}
+      />
 
       {/* Create / Edit Modal */}
       <Modal open={modalOpen} onClose={closeModal} title={editing ? 'Edit Order' : 'Create Order'} size="full">

@@ -53,6 +53,7 @@ const emptyForm = {
 
 const emptyTopup = { amount: '', paymentMethod: 'cash', reference: '', notes: '' };
 const emptyAdjust = { type: 'credit_adjustment', amount: '', reason: '' };
+const PAGE_SIZE = 20;
 
 function fmtCurrency(v) {
   return Number(v || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -80,6 +81,8 @@ export default function Customers() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [filterTier, setFilterTier] = useState('');
+  const [page, setPage] = useState(1);
+  const [pagination, setPagination] = useState({ total: 0, page: 1, pages: 1, limit: PAGE_SIZE });
 
   // Create/Edit modal
   const [modalOpen, setModalOpen] = useState(false);
@@ -110,16 +113,23 @@ export default function Customers() {
   const fetchCustomers = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await customersAPI.list();
+      const res = await customersAPI.list({
+        page,
+        limit: PAGE_SIZE,
+        search: search || undefined,
+        tier: filterTier || undefined,
+      });
       setCustomers(res.data?.customers || []);
+      setPagination(res.data?.pagination || { total: 0, page, pages: 1, limit: PAGE_SIZE });
     } catch (err) {
       toast.error(err.message || 'Failed to load customers');
     } finally {
       setLoading(false);
     }
-  }, [toast]);
+  }, [toast, page, search, filterTier]);
 
   useEffect(() => { fetchCustomers(); }, [fetchCustomers]);
+  useEffect(() => { setPage(1); }, [search, filterTier]);
 
   /* ───── CREATE / EDIT ───── */
   const openCreate = () => { setEditing(null); setForm(emptyForm); setModalOpen(true); };
@@ -313,14 +323,6 @@ export default function Customers() {
     toast.success(`Imported ${ok} customers${fail ? `, ${fail} skipped` : ''}`);
     fetchCustomers();
   };
-
-  /* ───── FILTER ───── */
-  const filtered = customers.filter((c) => {
-    const q = search.toLowerCase();
-    const matchSearch = c.name?.toLowerCase().includes(q) || c.email?.toLowerCase().includes(q) || c.phone?.includes(q);
-    const matchTier = !filterTier || c.tier === filterTier;
-    return matchSearch && matchTier;
-  });
 
   /* ───── LIST COLUMNS ───── */
   const columns = [
@@ -525,7 +527,18 @@ export default function Customers() {
             className="w-40"
           />
         </div>
-        <DataTable columns={columns} data={filtered} loading={loading} onRowClick={openDetail} emptyMessage="No customers found" />
+        <DataTable
+          columns={columns}
+          data={customers}
+          loading={loading}
+          onRowClick={openDetail}
+          emptyMessage="No customers found"
+          serverPagination
+          currentPage={page}
+          totalItems={pagination.total}
+          pageSize={PAGE_SIZE}
+          onPageChange={setPage}
+        />
       </GlassCard>
 
       {/* ───── Create / Edit Modal ───── */}
